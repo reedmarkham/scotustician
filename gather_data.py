@@ -1,14 +1,11 @@
 import requests
 import pandas as pd
 from datetime import datetime
-from ratelimit import limits, sleep_and_retry
 
 print("Script began: ",datetime.now())
 
-@sleep_and_retry
-@limits(calls=10, period=10)
 def call_api(url):
-	print(f"Getting {url}")
+	print(f"{url}")
 	response = requests.get(url)
 	parsed = response.json()
 	return parsed
