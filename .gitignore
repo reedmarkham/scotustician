@@ -1,0 +1,8 @@
+venv
+.env
+.DS_Store
+*.ipynb
+.ipynb_checkpoints
+*.pyc
+
+
