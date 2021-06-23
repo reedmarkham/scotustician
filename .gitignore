@@ -1,8 +1,6 @@
-venv
-.env
-.DS_Store
+.*
+!/.gitignore
 *.ipynb
-.ipynb_checkpoints
 *.pyc
 
 
