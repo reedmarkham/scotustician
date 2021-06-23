@@ -2,7 +2,9 @@ import boto3
 import ratelimit
 from ratelimit import limits, sleep_and_retry
 import requests
+import psycopg2
 
+import os
 import re
 import json
 import traceback
@@ -16,20 +18,14 @@ bucket = 'scotustician'
 cs_url = 'https://api.oyez.org/cases?per_page=0'
 cs_key = 'data/case_summary.json'
 
-def connect_to_rds():
-	try:
-		conn = psycopg2.connect(
-		host = os.environ['SCOTUSTICIAN_RDS_HOST'], 
-		port = os.environ['SCOTUSTICIAN_RDS_PORT'], 
-		dbname = os.environ['SCOTUSTICIAN_RDS_DBNAME'], 
-		user = os.environ['SCOTUSTICIAN_RDS_USERNAME'], 
-		password = os.environ['SCOTUSTICIAN_RDS_PASSWORD'])
-		conn.autocommit = True
-		cur = conn.cursor()
-	except Exception as exc:
-		traceback.print_exc()
-		print("Could not connect to RDS.")
-	return
+conn = psycopg2.connect(
+	host = os.environ['SCOTUSTICIAN_RDS_HOST'], 
+	port = os.environ['SCOTUSTICIAN_RDS_PORT'], 
+	dbname = os.environ['SCOTUSTICIAN_RDS_DBNAME'], 
+	user = os.environ['SCOTUSTICIAN_RDS_USERNAME'], 
+	password = os.environ['SCOTUSTICIAN_RDS_PASSWORD'])
+conn.autocommit = True
+cur = conn.cursor()
 
 @sleep_and_retry
 @limits(calls=1, period=1)
@@ -45,12 +41,15 @@ def get_case_summary_json():
 	cs_json = call_api(cs_url)
 	with open(cs_key, 'w') as dest:
 		try:
-			json.dump(cs_json, dest, indent=4, sort_keys=True)
+			json.dump(cs_json, dest)
+			dest.close()
+			print("Wrote case summary JSON file to disk.")
 		except Exception as exc:
 			traceback.print_exc()
 			print("Could not write case summary JSON file to disk.")
 		try:
-			s3.upload_file(cs_key, bucket, cs_key)
+			s3.put_object(Body=json.dumps(cs_json), Bucket=bucket, Key=cs_key)
+			print("Uploaded case summary JSON file to S3.")
 		except Exception as exc:
 			traceback.print_exc()
 			print("Could not upload case summary JSON file to S3.")
@@ -70,8 +69,8 @@ def check_s3_for_cases():
 	return s3_cases
 
 def case_summary_json_to_cases():
-	with open(cs_key) as cs_json_file:
-		loaded_cs_json_file = json.load(cs_json_file)
+	cs_json_file = open(cs_key,)
+	loaded_cs_json_file = json.loads(cs_json_file.read())
 	cases = {(case["term"], case["docket_number"]): case for case in loaded_cs_json_file}
 	return cases
 
@@ -91,22 +90,26 @@ def parse_case_transcripts(term, docket):
 def write_oa_json(term, docket, case, transcripts):
 	case_path = f"data/{term}.{docket}.json"
 	with open(case_path, "w") as case_file:
-		json.dump(case, case_file, indent=4, sort_keys=True)
+		json.dump(case, case_file)
+		case_file.close()
 	oa_id = 0
 	for transcript in transcripts:
 		oa_id += 1
 		transcript_file = "data/{}.{}.oa{}.json".format(term, docket, oa_id)
 		with open(transcript_file, "w") as transcript_dest:
 			try:
-				json.dump(transcript, transcript_dest, indent=4, sort_keys = True)
+				json.dump(transcript, transcript_dest)
+				transcript_dest.close()
+				print("Wrote OA JSON file to disk.")
 			except Exception as exc:
 				traceback.print_exc()
 				print("Could not write OA JSON file to disk.")
 			try:
 				s3.upload_file(transcript_file, bucket, transcript_file)
+				print("Uploaded OA JSON file to S3.")
 			except Exception as exc:
 				traceback.print_exc()
-				print("Could not write OA JSON file to disk.")
+				print("Could not upload OA JSON file to S3.")
 	return
 
 def get_oa_jsons(cases, s3_cases):
@@ -124,11 +127,9 @@ def get_oa_jsons(cases, s3_cases):
 	return
 
 def cases_from_s3_to_rds():
-	sb = s3r.Bucket(bucket)
-	obj = s3r.Object(bucket, cs_key)
-	file_content = obj.get()['Body'].read().decode('utf-8')
-	file_json = json.loads(file_content)
-	cases = json.load(file_json)
+	obj = s3.get_object(Bucket=bucket, Key=cs_key)
+	file_content = obj['Body'].read()
+	cases = json.loads(file_content)
 	for case in cases:
 		query = 'insert into public.case (case_id, term, docket_number, name, description, question) values (%s, %s, %s, %s, %s, %s);'
 		data = (case['ID'], case['term'], case['docket_number'], case['name'], case['description'], case['question'])
@@ -159,7 +160,6 @@ def oa_from_s3_to_rds():
 	return
 
 def main():
-	connect_to_rds()
 	get_case_summary_json()
 	#s3_cases = check_s3_for_cases()
 	s3_cases = []
