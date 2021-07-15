@@ -29,3 +29,5 @@ from raw.oa
 ) s1
 where (speaker != 'null' and speaker is not null)
 ;
+
+CREATE INDEX IF NOT EXISTS speakers_speaker_id_index ON public.speakers(speaker_id);

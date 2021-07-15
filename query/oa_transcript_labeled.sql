@@ -31,8 +31,8 @@ t.oa_id,
 c.oa_title,
 t.oa_session,
 t.speaker_id,
-s.speaker_name,
-case when t.speaker_id is not null then coalesce(s.roles->>'role_title','Advocate') else 'N/A' end as role,
+coalesce(s.speaker_name,'N/A') as speaker_name,
+coalesce(s.role, 'N/A') as role,
 t.start,
 t.stop,
 t.text_block,
@@ -42,7 +42,7 @@ from
 select
 oa_id,
 oa_session,
-speaker_id,
+coalesce(speaker_id, 'N/A') as speaker_id,
 start,
 stop,
 text_block,
@@ -51,14 +51,14 @@ from public.oa_transcript
 group by
 oa_id,
 oa_session,
-speaker_id,
+coalesce(speaker_id, 'N/A'),
 start,
 stop,
 text_block
 ) t
 left join
 (
-select speaker_id, speaker_name, roles from public.speakers
+select speaker_id, speaker_name, coalesce(roles->(jsonb_array_length(roles)-1)->>'role_title','Advocate') as role from public.speakers
 ) s
 on t.speaker_id = s.speaker_id
 left join
@@ -67,3 +67,8 @@ select oa_id, oa_title, case_id, term, docket_number, case_name from public.oa_t
 ) c
 on t.oa_id = c.oa_id
 ;
+
+CREATE INDEX IF NOT EXISTS oa_transcript_labeled_oa_id_index ON public.oa_transcript_labeled(oa_id);
+CREATE INDEX IF NOT EXISTS oa_transcript_labeled_case_id_index ON public.oa_transcript_labeled(case_id);
+CREATE INDEX IF NOT EXISTS oa_transcript_labeled_term_index ON public.oa_transcript_labeled(term);
+CREATE INDEX IF NOT EXISTS oa_transcript_labeled_speaker_id_index ON public.oa_transcript_labeled(speaker_id);

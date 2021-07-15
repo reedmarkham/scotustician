@@ -20,20 +20,20 @@ The data pipeline populates 3 entities with some different API calls:
 * ```case_full``` -- within the JSON array of ```case_summary``` objects, call each ```href``` (i.e. ```https://api.oyez.org/cases/2000/00-24```) to return a ```case_full``` JSON object with some additional metadata.
 * ```oral_argument``` -- with the ```case_full``` JSON object, call each ```oral_argument->>href``` (i.e. ```https://api.oyez.org/case_media/oral_argument_audio/22753```) to return any available ```oral_argument``` JSON object(s). There is typically only one object to return per case, but there can be multiple or none available depending on the case.
 
-The [oyez.py](oyez.py) script saves all these JSONs to disk (2.3 GB so far, for 60 years worth of data). In [run.sh](run.sh), we use the AWS CLI to sync the data in S3. Then [s3_to_rds.py](s3_to_rds.py), compares the data in RDS against S3 to incrementally upload new data. We currently run some aggregation queries in [rds.py](rds.py) to transform the data for end-user consumption.
+The [oyez.py](oyez.py) script saves all these JSONs to disk (2.3 GB so far for 60 years worth of data). In [run.sh](run.sh), we use the AWS CLI to sync the data from disk to S3. Then [s3_to_rds.py](s3_to_rds.py), compares the data in RDS against S3 to incrementally load new data to the database. Then, we run some aggregation queries using [rds.py](rds.py) to transform the data for end-user consumption.
 
 The RDS tables keep the full JSON files in ```jsonb``` columns, with the goal of transforming in SQL as needed. In each table, we also track the ID (parsed from the file name), the timestamp of the insert, the S3 object key.
 
 On the AWS side, you'll need: 
 * [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2-mac.html#cliv2-mac-install-cmd)
 * S3 bucket (i.e. `s3://scotustician`)
-* Postgres RDS database
+* Postgres RDS database (run [raw_ddl.sql](raw_ddl.sql) first thing)
 * Secrets Manager to encode your RDS credentials so that the `s3_to_rds.py` and `rds.py` scripts can access.
 
 ### Next steps
 
-* Data visualizations (Plotly Dash)
-* Orchestrate job in Airflow DAG
+* Plotly Dash app to visualize data
+* Containerize the app(s)
 
 ## License
 
