@@ -26,12 +26,12 @@ The RDS tables keep the full JSON files in ```jsonb``` columns, with the goal of
 
 ### Requirements
 
-I'm not storing the JSON files in this repo, so first run [init.sh](init.sh) to set up the local directories for them.
+I'm ignoring the JSON files for this repo, so first run [init.sh](init.sh) to set up the local directories for your own project. This will also attempt to install packages from [requirements.txt](requirements.txt).
 
 On the AWS side, you'll need: 
 * [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2-mac.html#cliv2-mac-install-cmd)
 * S3 bucket (i.e. `s3://scotustician`)
-* Postgres RDS database (run [raw_ddl.sql](raw_ddl.sql) as the first thing on this database to set up the staging data tables).
+* Postgres RDS database (run [raw_ddl.sql](raw_ddl.sql) to set up the staging data tables).
 * Secrets Manager to encode your RDS credentials so that the `s3_to_rds.py` and `rds.py` scripts can access. In these scripts, also substitute your other relevant RDS information (host URL, database name, port).
 
 Then, use [run.sh](run.sh) to run the whole job.
