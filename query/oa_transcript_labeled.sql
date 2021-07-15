@@ -32,7 +32,7 @@ c.oa_title,
 t.oa_session,
 t.speaker_id,
 s.speaker_name,
-coalesce(s.roles->>'role_title','Advocate') as role,
+case when t.speaker_id is not null then coalesce(s.roles->>'role_title','Advocate') else 'N/A' end as role,
 t.start,
 t.stop,
 t.text_block,
@@ -63,9 +63,7 @@ select speaker_id, speaker_name, roles from public.speakers
 on t.speaker_id = s.speaker_id
 left join
 (
-select oa_id, case_id, term, docket_number, case_name from public.oa_to_case
+select oa_id, oa_title, case_id, term, docket_number, case_name from public.oa_to_case
 ) c
 on t.oa_id = c.oa_id
 ;
-
-CREATE INDEX oa_transcript_labeled_case_id_index ON oa_transcript_labeled (case_id);
