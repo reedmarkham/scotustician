@@ -7,6 +7,7 @@ CREATE TABLE if not exists public.word_count_per_case
     case_name text COLLATE pg_catalog."default" NOT NULL,
     speaker_id text COLLATE pg_catalog."default",
     speaker_name text COLLATE pg_catalog."default",
+    role text  COLLATE pg_catalog."default",
     word_count integer
 )
 TABLESPACE pg_default;
