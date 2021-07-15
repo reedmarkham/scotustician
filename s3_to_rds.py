@@ -38,8 +38,8 @@ def get_rds_files(cur, table_name):
 	print(len(rds_files), " files found in RDS table: ", table_name, datetime.now())
 	return rds_files
 
-def determine_rds_upload(s3_files, rds_list):
-	s3_to_rds = [file for file in s3_files if not any(rds in file for rds in rds_list)]
+def determine_rds_upload(s3_files, rds_files):
+	s3_to_rds = [file for file in s3_files if not any(rds in file for rds in rds_files)]
 	return s3_to_rds
 
 def upload_rds(bucket, s3_to_rds, cur, table_name):
@@ -85,7 +85,7 @@ def main():
 
 	for table in tables:
 		rds_files = get_rds_files(cur, table)
-		rds_list = determine_rds_upload(s3_files, rds_files, table)
+		rds_list = determine_rds_upload(s3_files, rds_files)
 		upload_rds(bucket, rds_list, cur, table)
 
 	print('Closing RDS connection: ', datetime.now())
