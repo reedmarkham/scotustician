@@ -18,22 +18,28 @@ The data pipeline populates 3 entities with some different API calls:
 
 * ```case_summary``` -- call ```https://api.oyez.org/cases?per_page=0``` to return a JSON array of ```case_summary``` objects. These contain basic metadata about the case but no information about oral arguments, so we need to continue parsing. 
 * ```case_full``` -- within the JSON array of ```case_summary``` objects, call each ```href``` (i.e. ```https://api.oyez.org/cases/2000/00-24```) to return a ```case_full``` JSON object with some additional metadata.
-* ```oral_argument``` -- with the ```case_full``` JSON object, call each ```oral_argument->>href``` (i.e. ```https://api.oyez.org/case_media/oral_argument_audio/22753```) to return any available ```oral_argument``` JSON object(s). There is typically only one object to return per case, but there can be multiple or none available depending on the case.
+* ```oral_argument``` -- within the ```case_full``` JSON object, call each ```oral_argument->>href``` (i.e. ```https://api.oyez.org/case_media/oral_argument_audio/22753```) to return any available ```oral_argument``` JSON object(s). There is typically only one object to return per case, but there can be multiple or none available depending on the case.
 
 The [oyez.py](oyez.py) script saves all these JSONs to disk (2.3 GB so far for 60 years worth of data). In [run.sh](run.sh), we use the AWS CLI to sync the data from disk to S3. Then [s3_to_rds.py](s3_to_rds.py), compares the data in RDS against S3 to incrementally load new data to the database. Then, we run some aggregation queries using [rds.py](rds.py) to transform the data for end-user consumption.
 
 The RDS tables keep the full JSON files in ```jsonb``` columns, with the goal of transforming in SQL as needed. In each table, we also track the ID (parsed from the file name), the timestamp of the insert, the S3 object key.
 
+### Requirements
+
+I'm not storing the JSON files in this repo, so first run [init.sh](init.sh) to set up the local directories for them.
+
 On the AWS side, you'll need: 
 * [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2-mac.html#cliv2-mac-install-cmd)
 * S3 bucket (i.e. `s3://scotustician`)
-* Postgres RDS database (run [raw_ddl.sql](raw_ddl.sql) first thing)
-* Secrets Manager to encode your RDS credentials so that the `s3_to_rds.py` and `rds.py` scripts can access.
+* Postgres RDS database (run [raw_ddl.sql](raw_ddl.sql) as the first thing on this database to set up the staging data tables).
+* Secrets Manager to encode your RDS credentials so that the `s3_to_rds.py` and `rds.py` scripts can access. In these scripts, also substitute your other relevant RDS information (host URL, database name, port).
+
+Then, use [run.sh](run.sh) to run the whole job.
 
 ### Next steps
 
 * Plotly Dash app to visualize data
-* Containerize the app(s)
+* Containerization 
 
 ## License
 
