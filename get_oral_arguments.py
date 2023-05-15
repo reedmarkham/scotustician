@@ -11,7 +11,7 @@ def get_oas(oa_path, case_full_path):
 		print("Error: no case full JSONs found.")
 	
 	for case_full in existing_case_fulls:
-		case_full_file = open((str(case_full_path+case_full)),'r')
+		case_full_file = open((str(case_full_path+'/'+case_full)),'r')
 		case_full_json = json.load(case_full_file)
 		if ('oral_argument_audio' in case_full_json and case_full_json['oral_argument_audio']):
 			for oa in case_full_json['oral_argument_audio']:
