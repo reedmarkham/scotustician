@@ -22,7 +22,7 @@ def get_oas(oa_path, case_full_path):
 	print("All oral argument JSONs written. ", datetime.now())
 
 def main():
-      get_case_fulls(oa_path, case_full_path)
+      get_oas(oa_path, case_full_path)
  
 if __name__ == '__main__':
     main()
