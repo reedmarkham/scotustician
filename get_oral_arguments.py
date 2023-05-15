@@ -6,6 +6,7 @@ oa_path = os.getenv('OA_PATH')
 
 def get_oas(oa_path, case_full_path):
 	existing_case_fulls = os.listdir(case_full_path)
+	print(existing_case_fulls)
 	if not existing_case_fulls:
 		print("Error: no case full JSONs found.")
 	
