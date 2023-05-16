@@ -21,7 +21,8 @@ def write_json_to_path(url, path):
     with open(path, 'w') as dest:
         json.dump(j, dest)
         dest.close()
-        print(f"{path} written", datetime.now())    
+        print(f"{path} written", datetime.now())
+    return    
 
 def path_to_list(path, output_list):
 	for file in os.listdir(path):
