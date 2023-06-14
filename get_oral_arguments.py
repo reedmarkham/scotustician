@@ -9,7 +9,6 @@ def get_oas(oa_path, case_full_path):
 	print(existing_case_fulls)
 	if not existing_case_fulls:
 		print("Error: no case full JSONs found.")
-	
 	for case_full in existing_case_fulls:
 		case_full_file = open((str(case_full_path+'/'+case_full)),'r')
 		case_full_json = json.load(case_full_file)
@@ -19,7 +18,6 @@ def get_oas(oa_path, case_full_path):
 				oa_file = f'{oa_path}/oa_{oa_id}.json'
 				write_json_to_path(oa['href'], oa_file)
 		case_full_file.close()
-
 	print("All oral argument JSONs written. ", datetime.now())
 
 def main():
