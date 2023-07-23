@@ -9,4 +9,4 @@ python3 get_case_summary.py
 python3 get_case_fulls.py
 python3 get_oral_arguments.py
 
-sh sync_s3.sh
+sh sync_s3.sh $0

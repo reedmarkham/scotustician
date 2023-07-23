@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-export BUCKET='s3://scotustician'
+export BUCKET=$0
 export CASE_SUMMARY_PATH='data/case_summary.json'
 export CASE_FULL_PATH='data/case'
 export OA_PATH='data/oa'

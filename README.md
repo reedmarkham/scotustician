@@ -8,7 +8,6 @@ mkdir data/case
 mkdir data/oa
 ```
 ## Run
-Edit `run.sh` for your S3 bucket, then
 ```
-sh run.sh
+sh run.sh {insert S3 bucket here}
 ```
