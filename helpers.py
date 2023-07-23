@@ -13,11 +13,8 @@ def get_json(url):
     return r_json
 
 def write_json_to_path(url, path):
-
     print(f"Requesting URL from {url}", datetime.now())
-
     j = get_json(url)
-
     with open(path, 'w') as dest:
         json.dump(j, dest)
         dest.close()
