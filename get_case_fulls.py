@@ -4,7 +4,7 @@ from helpers import write_json_to_path
 case_summary_path = os.getenv('CASE_SUMMARY_PATH')
 case_full_path = os.getenv('CASE_FULL_PATH')
 
-def get_case_fulls(case_summary_path):
+def get_case_fulls(case_summary_path: str):
 	with open(case_summary_path, 'r') as case_summary:
 		case_summaries_json = json.load(case_summary)
 		for case_summary in case_summaries_json:
