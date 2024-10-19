@@ -4,7 +4,9 @@ from fastapi import FastAPI
 from ratelimit import limits, sleep_and_retry
 import requests, boto3
 
-app = FastAPI()
+DESCRIPTION= '''
+A FastAPI wrapper to interact with the Oyez.org API for Supreme Court case data
+'''
 
 # Oyez API URLs:
 OYEZ_CASE_SUMMARY = 'https://api.oyez.org/cases?per_page=0'
@@ -13,10 +15,16 @@ def oyez_api_case(term: int, case_id: str):
     return f'https://api.oyez.org/cases/{term}/{case_id}'
 
 # S3 URIs:
-S3_CASE_SUMMARY = os.get.environ('S3_CASE_SUMMARY')
+S3_CASE_SUMMARY = os.environ['S3_CASE_SUMMARY']
 
 # File names within S3 buckets:
-CASE_SUMMARY_KEY = os.get.environ('CASE_SUMMARY_KEY')
+CASE_SUMMARY_KEY = os.environ['CASE_SUMMARY_KEY']
+
+app = FastAPI(
+    title = 'scotustician',
+    description=DESCRIPTION,
+    version = '0.1.0'
+    )
 
 @sleep_and_retry
 @limits(calls=1, period=1)
@@ -26,12 +34,11 @@ def request(url):
     except:
         print(f'API response: {requests.get(url).status_code}')
 
-
-@app.get("/")
+@app.get("/case_summary/")
 def case_summary():
-    request(OYEZ_CASE_SUMMARY)
+    return request(OYEZ_CASE_SUMMARY)
 
-@app.post("/")
+@app.post("/sync_case_summary/")
 def sync_case_summary():
     s3 = boto3.client('s3')
     s3.put_object(
