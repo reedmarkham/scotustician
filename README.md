@@ -12,7 +12,7 @@ cd scotustician
 docker-compose up -d
 ```
 
-# Examples:
+## Examples:
 Now deployed at `http://127.0.0.1:8000`, interacting via FastAPI in `test.py`:
 ```
 pip install requests
