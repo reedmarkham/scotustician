@@ -1,4 +1,4 @@
-name: scotustician
+name: 'scotustician'
 services:
   fastapi:
     build: .
