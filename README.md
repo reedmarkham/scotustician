@@ -1,23 +1,23 @@
 # scotustician
 
-Activate a virtual environment i.e. in :
+## Deployment:
+Install [Docker](https://docs.docker.com/desktop/install/mac-install/).
+
+Deploy locally, for example:
 ```
-conda create --name scotustician
-conda activate scotustician
+git clone https://github.com/reedmarkham/scotustician.git
+cd scotustician
+docker-compose up -d
 ```
-Install AWS CLI v2:
+
+# Examples:
+Now deployed at `http://127.0.0.1:8000`, interacting via FastAPI in `test.py`:
 ```
-curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
-sudo installer -pkg AWSCLIV2.pkg -target /
+pip install requests
+pip install boto3
+python3 test.py
 ```
-## Set-up
-```
-pip install -r requirements.txt
-mkdir data
-mkdir data/case
-mkdir data/oa
-```
-## Run
-```
-sh run.sh SCOTUSTICIAN_S3
-```
+
+## Reference:
+[Oyez.org](https://www.oyez.org/) API unofficial documentation:
+`https://github.com/walkerdb/supreme_court_transcripts`
