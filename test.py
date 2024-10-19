@@ -14,7 +14,7 @@ requests.post('http://127.0.0.1:8000/post/sync_case_summary')
 
 # Load all case fulls to S3
 case_summaries = requests.get('http://127.0.0.1:8000/get/case_summary')
-for case in case_summaries:
+for case in case_summaries[0:1]:
     key = f'case_full_{case.ID}.json'
     s3.put_object(
         Body = json.dumps(requests.get(case.href)),

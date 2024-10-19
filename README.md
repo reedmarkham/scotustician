@@ -19,5 +19,5 @@ python3 test.py
 ```
 
 ## Reference:
-[Oyez.org](https://www.oyez.org/) API unofficial documentation:
+A popular implementation of [Oyez.org](https://www.oyez.org/) API:
 `https://github.com/walkerdb/supreme_court_transcripts`
