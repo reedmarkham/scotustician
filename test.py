@@ -26,7 +26,7 @@ for case in case_summaries[0:1]:
 terms = [1965, 1972]
 for term in terms:
     cases = requests.get('http://127.0.0.1:8000/get/cases_by_term/{term}')
-    for case in cases:
+    for case in cases[0:1]:
         case_full = requests.get('http://127.0.0.1:8000/case_full/?term={term}&case={case_id}')
         if ('oral_argument_audio' in case_full and case_full['oral_argument_audio']):
             for oa in case['oral_argument_audio']:
