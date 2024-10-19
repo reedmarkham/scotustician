@@ -1,6 +1,7 @@
-name: 'scotustician'
-services:
-  fastapi:
-    build: .
-    ports:
-      - "8000:8000"
+version: '3.3'
+  name: 'scotustician'
+  services:
+    fastapi:
+      build: .
+      ports:
+        - "8000:8000"
