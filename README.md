@@ -8,7 +8,7 @@ Update `.env` to specify some resources: S3 bucket + file name for case summarie
 ```
 git clone https://github.com/reedmarkham/scotustician.git
 cd scotustician
-docker compose up
+docker compose up -d
 ```
 
 Check out the Swagger UI for the API: http://0.0.0.0:8000/docs
