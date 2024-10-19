@@ -1,28 +1,29 @@
 # scotustician
 
-## Deployment:
+## Deployment (local):
 Install [Docker](https://docs.docker.com/desktop/install/mac-install/).
 
 Update `.env` to specify some resources: S3 bucket + file name for case summaries.
 
-Deploy locally, for example:
 ```
 git clone https://github.com/reedmarkham/scotustician.git
 cd scotustician
-docker-compose up -d
+docker compose up
 ```
 
-## Examples:
+Check out the Swagger UI for the API: http://0.0.0.0:8000/docs
 
-Recommended - install [Miniconda](https://docs.anaconda.com/miniconda/miniconda-install/) and activate a `conda` environment:
+## Example usage:
+
+Recommended: install [Miniconda](https://docs.anaconda.com/miniconda/miniconda-install/) and activate a `conda` environment:
 ```
 conda create --name scotustician
 conda activate scotustician
 ```
-Now deployed at `http://127.0.0.1:8000`, run `test.py`:
+
+Now, run `test.py` to interact with the locally-deployed API:
 ```
-pip3 install requests
-pip3 install boto3
+pip3 install requests boto3
 python3 test.py
 ```
 
