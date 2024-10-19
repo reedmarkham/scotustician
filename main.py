@@ -4,13 +4,9 @@ from fastapi import FastAPI
 from ratelimit import limits, sleep_and_retry
 import requests, httpx, boto3
 
-DESCRIPTION= '''
-A FastAPI wrapper to interact with the Oyez.org API for Supreme Court case data
-'''
-
 # Oyez API URLs:
-OYEZ_CASE_SUMMARY = 'https://api.oyez.org/cases?per_page=0'
-OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
+OYEZ_CASE_SUMMARY = os.environ['OYEZ_CASE_SUMMARY']
+OYEZ_CASES_TERM_PREFIX = os.environ['OYEZ_CASES_TERM_PREFIX']
 def oyez_api_case(term: int, docket_number: str):
     return f'https://api.oyez.org/cases/{term}/{docket_number}'
 
@@ -22,7 +18,9 @@ CASE_SUMMARY_KEY = os.environ['CASE_SUMMARY_KEY']
 
 app = FastAPI(
     title = 'scotustician',
-    description=DESCRIPTION,
+    description='''
+    A FastAPI tool to interact with the Oyez.org API for Supreme Court case data
+    ''',
     version = '0.1.0'
     )
 

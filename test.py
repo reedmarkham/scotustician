@@ -45,6 +45,7 @@ for term in terms:
                 oa_id = oa['id']
                 key = f'oa_{oa_id}.json'
                 oa_href = oa['href']
+                print(requests.get(oa_href).json()['transcript']['sections'][0]['turns'][0]) # Sample of transcript
                 s3.put_object(
                     Body = json.dumps(requests.get(oa_href).json()),
                     Bucket = OA_BUCKET,
