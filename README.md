@@ -1,7 +1,8 @@
 # scotustician
 
-Activate a virtual environment:
+Activate a virtual environment i.e. in :
 ```
+conda create --name scotustician
 conda activate scotustician
 ```
 Install AWS CLI v2:
@@ -18,5 +19,5 @@ mkdir data/oa
 ```
 ## Run
 ```
-sh run.sh {insert S3 bucket here}
+sh run.sh SCOTUSTICIAN_S3
 ```
