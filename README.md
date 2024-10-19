@@ -18,8 +18,8 @@ Now deployed at `http://127.0.0.1:8000`, interacting via FastAPI in `test.py`:
 conda create --name scotustician
 conda activate scotustician
 
-pip install requests
-pip install boto3
+pip3 install requests
+pip3 install boto3
 python3 test.py
 ```
 
