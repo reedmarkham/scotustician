@@ -1,5 +1,4 @@
 version: '3.3'
-  name: 'scotustician'
   services:
     fastapi:
       build: .
