@@ -21,7 +21,7 @@ conda create --name scotustician
 conda activate scotustician
 ```
 
-Now, run `test.py` to interact with the locally-deployed API:
+Now, run `test.py` to interact with the locally-deployed API, and load some data to S3:
 ```
 pip3 install requests boto3
 python3 test.py
