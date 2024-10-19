@@ -3,6 +3,8 @@
 ## Deployment:
 Install [Docker](https://docs.docker.com/desktop/install/mac-install/).
 
+Update `.env` to specify some resources: S3 bucket + file name for case summaries.
+
 Deploy locally, for example:
 ```
 git clone https://github.com/reedmarkham/scotustician.git

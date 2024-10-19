@@ -1,4 +1,4 @@
-import json
+import json, os
 
 from fastapi import FastAPI
 from ratelimit import limits, sleep_and_retry
@@ -13,10 +13,10 @@ def oyez_api_case(term: int, case_id: str):
     return f'https://api.oyez.org/cases/{term}/{case_id}'
 
 # S3 URIs:
-S3_CASE_SUMMARY = 'scotustician-case-summary'
+S3_CASE_SUMMARY = os.get.environ('S3_CASE_SUMMARY')
 
 # File names within S3 buckets:
-CASE_SUMMARY_KEY = 'case_summary.json'
+CASE_SUMMARY_KEY = os.get.environ('CASE_SUMMARY_KEY')
 
 @sleep_and_retry
 @limits(calls=1, period=1)
