@@ -5,7 +5,7 @@
 * [Generate BERT embeddings for each "utterance," mapped to each speaker (justice or petitioner)](https://mccormickml.com/2019/05/14/BERT-word-embeddings-tutorial/#sentence-vectors)
 * Map each set of speakers and utterance BERT embeddings to each oral argument (as well as case)
 * Store BERT embeddings vectors (i.e. [OpenSearch](https://github.com/ev2900/OpenSearch_Neural_Search))
-* Explore some similarity and/or sentiment analyses from BERT embeddings vectors
+* Explore some similarity (by oral argument/case) and/or sentiment analyses (by oral argument/speaker) from BERT embeddings vectors
 
 # Ongoing development:
 Recommended: install [Miniconda](https://docs.anaconda.com/miniconda/miniconda-install/) and activate a `conda` environment:
