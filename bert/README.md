@@ -1,14 +1,22 @@
 # Generating oral argument transcript embeddings using BERT
 
+# To-do:
+* Serialize text data from JSONs on S3 (i.e. `s3://scotustician-oral-argument`)
+* Generate BERT embeddings for each "utterance," mapped to each speaker (justice or petitioner)
+* Map each set of speakers and utterance embeddings to each oral argument (as well as case)
+* Store vectors (i.e. OpenSearch)
+
+# Ongoing development:
 Recommended: install [Miniconda](https://docs.anaconda.com/miniconda/miniconda-install/) and activate a `conda` environment:
 ```
 conda create --name scotustician-bert
 conda activate scotustician-bert
 ```
 
-## Install dependencies
+Exploring maximum transcript lengths:
 ```
 pip3 install boto3 transformers
+python3 dev/get_max_len.py
 ```
 
 # Reference:
