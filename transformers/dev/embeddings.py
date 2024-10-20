@@ -1,23 +1,10 @@
 import json, pprint
 
 import boto3
-from transformers import BertTokenizer
+from sentence_transformers import SentenceTransformer, util
 
 BUCKET = 'scotustician-oral-argument'
-
-# Load the BERT tokenizer.
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
-
-def get_max_len(sentences: list[str]):
-    max_len = 0
-    # For every sentence...
-    for sent in sentences:
-        # Tokenize the text and add `[CLS]` and `[SEP]` tokens.
-        input_ids = tokenizer.encode(sent, add_special_tokens=True)
-
-        # Update the maximum sentence length.
-        max_len = max(max_len, len(input_ids))
-        return max_len
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 def count_oa(bucket: str):
     # get the bucket
@@ -59,15 +46,14 @@ for page in paginator.paginate(Bucket=BUCKET, PaginationConfig={'MaxItems': n_tr
                     start = tb['start']
                     stop = tb['stop']
                     utterance = {}
+                    utterance['oa_id'] = j['id']
                     utterance['speaker'] = speaker
                     utterance['role'] = role
                     utterance['text'] = text
+                    utterance['embedding'] = model.encode(text, convert_to_tensor=True)
                     utterance['start'] = start
                     utterance['stop'] = stop
                     transcript.append(utterance)
 
 # Show what the transcript looks like
 pprint.pprint(transcript)
-
-# What is the maximum sentence length in this transcript?
-print(get_max_len([t['text'] for t in transcript]))
