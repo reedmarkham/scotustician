@@ -3,8 +3,8 @@ import json
 import pandas as pd, boto3
 
 S3_CASE_SUMMARY = 'scotustician-case-summary'
-CASE_SUMMARY_KEY = 'case-summary.json'
-CASE_SUMMARY_CSV = './case-summary.csv'
+CASE_SUMMARY_KEY = 'case_summary.json'
+CASE_SUMMARY_CSV = './case_summary.csv'
 
 s3 = boto3.resource('s3')
 
