@@ -1,5 +1,8 @@
 # Generating oral argument transcript embeddings using Hugging Face Sentence Transformeres
 
+# Pre-requisites:
+[Deploy an OpenSearch vector database](https://github.com/reedmarkham/scotustician-db)
+
 # To-do:
 * ~~Read oral argument JSONs from S3 (i.e. `s3://scotustician-oral-argument`)~~
 * ~~Generate pre-trained model embeddings for each "utterance," mapped to each speaker (justice or petitioner), start/stop timestamps, and oral argument~~
@@ -14,9 +17,8 @@ conda create --name scotustician-transformers
 conda activate scotustician-transformers
 ```
 
-Check out transcript(s) and corresponding embeddings:
+Compute embeddings from JSONs on S3 and load to OpenSearch:
 ```
-cd dev
-pip3 install boto3 sentence_transformers numpy==1.26.4
-python3 embeddings.py
+pip3 install boto3==1.34.29 sentence_transformers==2.2.2 numpy==1.26.4 opensearch-py==2.4.2
+python3 load-embeddings.py
 ```
