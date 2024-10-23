@@ -5,16 +5,16 @@ from ratelimit import limits, sleep_and_retry
 import requests, httpx, boto3
 
 # Oyez API URLs:
-OYEZ_CASE_SUMMARY = os.environ['OYEZ_CASE_SUMMARY']
-OYEZ_CASES_TERM_PREFIX = os.environ['OYEZ_CASES_TERM_PREFIX']
+OYEZ_CASE_SUMMARY = 'https://api.oyez.org/cases?per_page=0'
+OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
 def oyez_api_case(term: int, docket_number: str):
     return f'https://api.oyez.org/cases/{term}/{docket_number}'
 
 # S3 URIs:
-S3_CASE_SUMMARY = os.environ['S3_CASE_SUMMARY']
+S3_CASE_SUMMARY = 'scotustician-case-summary'
 
 # File names within S3 buckets:
-CASE_SUMMARY_KEY = os.environ['CASE_SUMMARY_KEY']
+CASE_SUMMARY_KEY = 'case_summary.json'
 
 app = FastAPI(
     title = 'scotustician',
