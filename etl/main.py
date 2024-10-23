@@ -1,4 +1,4 @@
-import json, os
+import json
 
 from fastapi import FastAPI
 from ratelimit import limits, sleep_and_retry

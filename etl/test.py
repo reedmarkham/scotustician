@@ -22,7 +22,7 @@ requests.post(f'{HOST}/sync_case_summary')
 print('Synced case summary to S3 ...')
 
 # Load case fulls to S3
-case_summaries = requests.get(f'{HOST}/case_summary').json()
+case_summaries = request(f'{HOST}/case_summary')
 for case in case_summaries:
     case_id = case['ID']
     print(f'Getting case {case_id}')

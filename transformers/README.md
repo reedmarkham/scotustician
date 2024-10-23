@@ -6,7 +6,7 @@
 # To-do:
 * ~~Read oral argument JSONs from S3 (i.e. `s3://scotustician-oral-argument`)~~
 * ~~Generate pre-trained model embeddings for each "utterance," mapped to each speaker (justice or petitioner), start/stop timestamps, and oral argument~~
-* Map each oral argument to case, term
+* ~~Map each oral argument to case, term~~
 * Store vectors (i.e. [OpenSearch](https://github.com/ev2900/OpenSearch_Neural_Search)); [tutorial](https://medium.com/marvelous-mlops/creating-vector-database-with-opensearch-7562b7451978)
 * Explore similarity and/or sentiment analyses
 
