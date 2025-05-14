@@ -12,7 +12,7 @@ This project is divided into the following components:
 
 ```
 scotustician/
-├── etl/               # FastAPI service for SCOTUS data retrieval and preprocessing
+├── etl/               # FastAPI service to ingest raw data from Oyez.org API
 ├── transformers/      # Hugging Face pipeline for generating and storing text embeddings
 ├── infra/             # AWS CDK code defining ECS services, clusters, and infrastructure
 └── .github/workflows/ # CI/CD pipelines for automatic deployment via GitHub Actions
@@ -44,3 +44,9 @@ This project uses GitHub Actions and AWS CDK to automatically build and deploy s
   - VPC and ECS Clusters
   - Fargate and EC2 Task Definitions
   - GPU-backed Auto Scaling Group for `transformers`
+
+---
+
+## Appendix
+
+This project owes inspiration and many thanks to [@walkerdb](https://github.com/walkerdb/supreme_court_transcripts) for their original repository, as well as [Oyez.org](https://oyez.org) for their API.
