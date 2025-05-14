@@ -6,7 +6,7 @@ It supports downstream search, clustering, and visualization tasks by processing
 
 ---
 
-## 📦 Overview
+## Folder Structure
 
 This project is divided into the following components:
 
@@ -20,7 +20,7 @@ scotustician/
 
 ---
 
-## ⚙️ Architecture
+## Design
 
 **Infrastructure:**
 - AWS CDK (TypeScript) to provision services, clusters, and networking
@@ -35,9 +35,9 @@ scotustician/
 
 ---
 
-## 🚀 Deployment
+## CI/CD
 
-This project uses GitHub Actions CI/CD and AWS CDK to automatically build and deploy services:
+This project uses GitHub Actions and AWS CDK to automatically build and deploy services:
 
 - GitHub Actions workflows (`.github/workflows/`) detect changes in `etl/` or `transformers/`, build Docker images, and deploy via `cdk deploy`.
 - AWS resources are defined in `infra/lib/`, including:
