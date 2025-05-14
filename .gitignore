@@ -1,2 +1,77 @@
 .DS_Store
 **/.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+
+# Distribution / packaging
+.eggs/
+dist/
+build/
+sdist/
+*.egg-info/
+*.deb
+*.rpm
+*.manifest
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# PyInstaller
+#  Often these are written to the current system temp directory under _MEIPASS*
+#  folder
+_MEIPASS*
+!**/__pycache__/*
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.log
+*.rpt
+*.mo
+*.pot
+
+# Translations
+*.po
+*.mo
+
+# Django stuff:
+*.log
+*.pot
+
+# Sphinx stuff:
+docs/_build/
+
+# MkDocs stuff:
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Editor/IDE-specific files
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.bak
+*.tmp
+*~
+my_env/

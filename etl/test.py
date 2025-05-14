@@ -16,6 +16,7 @@ print('Intialized S3 ...')
 # Define API host
 HOST = 'http://127.0.0.1:8000'
 
+'''
 # Load case summaries to S3
 requests.post(f'{HOST}/sync_case_summary')
 
@@ -38,6 +39,7 @@ for case in case_summaries:
     print(f'Loaded: s3://{CASE_FULL_BUCKET}/{key} ...')
 
 print(f'Loaded case full JSONs to s3://{CASE_FULL_BUCKET}')
+'''
 
 # Specify terms of interest, and iterate through cases; later, load some oral arguments to S3
 terms = list(range(1955, 2025))
@@ -55,15 +57,16 @@ for term in terms:
                 oa_href = oa['href']
 
                 oa_json = request(oa_href)
-                oa_json['term'] = term
+                oa_json['term'] = term # TypeError: 'NoneType' object does not support item assignment -> handle None oa_json
                 oa_json['case_id'] = case_id
                 oa_json['docket_number'] = docket_number
                 oa_json['session'] = session
 
-                print('-'*20,'Sample of Supreme Court oral argument: ', '-'*20)
-                sample = oa_json['transcript']['sections'][0]['turns'][0]
-                pprint.pprint(sample, compact=True) 
-                print('-'*len('-'*20,'Sample of Supreme Court oral argument: ', '-'*20))
+                # border = ('-'*20)+'Sample of Supreme Court oral argument: '+('-'*20)
+                # print(border)
+                # sample = oa_json['transcript']['sections'][0]['turns'][0]
+                # pprint.pprint(sample, compact=True) 
+                # print('-'*len(border))
 
                 s3.put_object(
                     Body = json.dumps(oa_json),
