@@ -1,8 +1,10 @@
 # 🏛️ scotustician
 
-**scotustician** is a data pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts. 
+**scotustician** is a data pipeline wrapped by FastAPI and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using CDK and GitHub Actions.
 
-It supports downstream search, clustering, and visualization tasks by processing SCOTUS OA transcripts into structured embeddings using Hugging Face transformer models.
+This project supports downstream search, clustering, and visualization tasks by processing SCOTUS OA transcripts into structured embeddings using Hugging Face transformer models.
+
+The [Hugging Face model](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) used produces 384-dimension embeddings and performs well for clustering and semantic search but future work can experiment with different models.
 
 ---
 
@@ -49,4 +51,4 @@ This project uses GitHub Actions and AWS CDK to automatically build and deploy s
 
 ## Appendix
 
-This project owes inspiration and many thanks to [@walkerdb](https://github.com/walkerdb/supreme_court_transcripts) for their original repository, as well as [Oyez.org](https://oyez.org) for their API.
+This project owes inspiration and many thanks to [@walkerdb](https://github.com/walkerdb/supreme_court_transcripts) for their original repository as well as [Oyez.org](https://oyez.org) for their API and data curation.
