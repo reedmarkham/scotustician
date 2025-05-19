@@ -1,3 +1,6 @@
+scripts/
+
+# macOS
 .DS_Store
 **/.DS_Store
 
@@ -26,8 +29,6 @@ env/
 ENV/
 
 # PyInstaller
-#  Often these are written to the current system temp directory under _MEIPASS*
-#  folder
 _MEIPASS*
 !**/__pycache__/*
 
@@ -48,23 +49,23 @@ coverage.xml
 *.po
 *.mo
 
-# Django stuff:
+# Django stuff
 *.log
 *.pot
 
-# Sphinx stuff:
+# Sphinx docs
 docs/_build/
 
-# MkDocs stuff:
+# MkDocs
 site/
 
-# Jupyter Notebook
+# Jupyter
 .ipynb_checkpoints
 
 # pyenv
 .python-version
 
-# Editor/IDE-specific files
+# Editor/IDE files
 .idea/
 *.suo
 *.ntvs*
@@ -75,3 +76,24 @@ site/
 *.tmp
 *~
 my_env/
+
+# Node.js / CDK
+node_modules/
+cdk.out/
+package-lock.json
+
+# TypeScript
+*.tsbuildinfo
+
+# AWS CDK context
+cdk.context.json
+cdk.context.lock.json
+.context.json
+
+# dotenv and secrets
+.env
+.env.*
+*.secrets.*
+
+# VS Code
+.vscode/

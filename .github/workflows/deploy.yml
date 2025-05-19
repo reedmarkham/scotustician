@@ -52,6 +52,7 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       TOOLKIT_STACK: CDKToolkit-scotustician

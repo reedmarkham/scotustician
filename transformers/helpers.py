@@ -40,9 +40,16 @@ def generate_embeddings(
     logger.info("✅ Embedding generation complete")
     return embeddings.tolist()
 
-def save_embeddings(embeddings: List[List[float]], bucket: str, key: str):
+def save_embeddings(embeddings: List[List[float]], chunks: List[str], bucket: str, key: str, metadata: dict):
     logger.info(f"💾 Saving embeddings to s3://{bucket}/{key}")
-    df = pd.DataFrame(embeddings)
+    df = pd.DataFrame({
+        "vector": embeddings,
+        "text": chunks,
+        "term": metadata["term"],
+        "case_name": metadata["case_name"],
+        "case_id": metadata["case_id"],
+        "source_key": key
+    })
     s3.put_object(Bucket=bucket, Key=key, Body=df.to_json(orient='records', lines=True))
 
 def ensure_index(os_client: OpenSearch, index_name: str):
@@ -63,19 +70,20 @@ def ensure_index(os_client: OpenSearch, index_name: str):
                 },
                 "case_name": {"type": "keyword"},
                 "term": {"type": "keyword"},
+                "case_id": {"type": "keyword"},
                 "source_key": {"type": "keyword"}
             }
         }
     })
 
 def extract_metadata_from_key(key: str) -> dict:
-    # e.g., scotustician/raw/2021-10_roe-v-wade.json
     filename = key.split("/")[-1].replace(".json", "")
     if "_" in filename:
         term, case_name = filename.split("_", 1)
     else:
         term, case_name = "unknown", "unknown"
-    return {"term": term, "case_name": case_name}
+    case_id = f"{term}_{case_name}"
+    return {"term": term, "case_name": case_name, "case_id": case_id}
 
 def index_to_opensearch(
     embeddings: List[List[float]],
@@ -91,13 +99,14 @@ def index_to_opensearch(
 
     bulk_body = []
     for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
-        doc_id = f"{meta['term']}-{meta['case_name']}-chunk-{i}"
+        doc_id = f"{meta['case_id']}-chunk-{i}"
         bulk_body.append({"index": {"_index": index_name, "_id": doc_id}})
         bulk_body.append({
             "text": chunk,
             "vector": vector,
             "term": meta["term"],
             "case_name": meta["case_name"],
+            "case_id": meta["case_id"],
             "source_key": source_key
         })
 

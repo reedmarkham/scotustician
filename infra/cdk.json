@@ -1,0 +1,6 @@
+{
+  "app": "node --loader ts-node/esm bin/scotustician.ts",
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true
+  }
+}

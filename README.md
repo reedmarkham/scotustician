@@ -25,27 +25,173 @@ scotustician/
 ## Design
 
 **Infrastructure:**
-- AWS CDK (TypeScript) to provision services, clusters, and networking
-- ECS Fargate for `ingest` (parallelized ingestion of JSON data from Oyez.org API to S3 using Python)
-- ECS EC2 w/ GPU for `transformers` (long-running embedding generator)
+- AWS CDK (TypeScript) to provision clusters, networking, and ECS tasks below using Docker images
+- ECS Fargate task for `ingest` (parallelized ingestion of JSON data from Oyez.org API to S3 using Python)
+- ECS EC2 task w/ GPU for `transformers`
 - GitHub Actions CI/CD
 
 **Data Flow:**
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
 2. Processed text from `ingest` on S3 is read by `transformers`, which uses [Hugging Face models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) to generate embeddings.
-3. Embeddings are stored in an [OpenSearch vector database](https://www.github.com/reedmarkham/scotustician-db) deployed separately.
+3. Embeddings are stored in an [OpenSearch vector database](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
 ---
 
+## Prerequisites
+
+The ARN, access key, and secret key ID for a previously-created (i.e. via console or other stack) AWS IAM user, with a minimal policy like:
+```
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "CloudFormationAccess",
+			"Effect": "Allow",
+			"Action": [
+				"cloudformation:DescribeStacks",
+				"cloudformation:CreateChangeSet",
+				"cloudformation:ExecuteChangeSet",
+				"cloudformation:DescribeChangeSet",
+				"cloudformation:GetTemplateSummary",
+				"cloudformation:DescribeStackEvents",
+				"cloudformation:DeleteStack",
+				"cloudformation:UpdateStack"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "CDKBootstrapAssets",
+			"Effect": "Allow",
+			"Action": [
+				"s3:PutObject",
+				"s3:GetObject",
+				"s3:ListBucket"
+			],
+			"Resource": [
+				"arn:aws:s3:::cdk-sctstcn-assets-<ACCOUNT_ID>-<REGION>",
+				"arn:aws:s3:::cdk-sctstcn-assets-<ACCOUNT_ID>-<REGION>/*"
+			]
+		},
+		{
+			"Sid": "PassExecutionRole",
+			"Effect": "Allow",
+			"Action": [
+				"iam:PassRole",
+				"sts:AssumeRole"
+			],
+			"Resource": "arn:aws:iam::<ACCOUNT_ID>:role/cdk-sctstcn-cfn-exec-role-*"
+		},
+		{
+			"Sid": "ECSAndEC2Management",
+			"Effect": "Allow",
+			"Action": [
+				"ecs:*",
+				"ec2:Describe*",
+				"ec2:CreateTags",
+				"ec2:RunInstances",
+				"ec2:CreateSecurityGroup",
+				"ec2:DeleteSecurityGroup",
+				"ec2:AuthorizeSecurityGroupIngress",
+				"ec2:AuthorizeSecurityGroupEgress"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "ECRAccess",
+			"Effect": "Allow",
+			"Action": [
+				"ecr:GetAuthorizationToken",
+				"ecr:BatchCheckLayerAvailability",
+				"ecr:GetDownloadUrlForLayer",
+				"ecr:BatchGetImage",
+				"ecr:DescribeRepositories"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "LogGroupManagement",
+			"Effect": "Allow",
+			"Action": [
+				"logs:CreateLogGroup",
+				"logs:PutRetentionPolicy",
+				"logs:DescribeLogGroups",
+				"logs:CreateLogStream",
+				"logs:PutLogEvents"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "SSMParameterAccess",
+			"Effect": "Allow",
+			"Action": [
+				"ssm:GetParameter",
+				"ssm:GetParameters",
+				"ssm:PutParameter",
+				"ssm:DescribeParameters"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "SecretsManagerAccess",
+			"Effect": "Allow",
+			"Action": [
+				"secretsmanager:GetSecretValue",
+				"secretsmanager:DescribeSecret"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "ELBAccessForFargate",
+			"Effect": "Allow",
+			"Action": [
+				"elasticloadbalancing:*"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "CloudMapAccess",
+			"Effect": "Allow",
+			"Action": [
+				"servicediscovery:*"
+			],
+			"Resource": "*"
+		}
+	]
+}
+```
+
+Ensure the following secrets are configured in your GitHub repo at **Settings > Secrets and variables > Actions > repository secrets**:
+| Secret Name         | Description                       | Example Value         |
+|---------------------|-----------------------------------|----------------------|
+| `AWS_ACCOUNT_ID`    | AWS account ID                    | `123456789012`       |
+| `AWS_REGION`        | AWS region | `us-east-1`          |
+| `AWS_IAM_ARN`        | AWS IAM user's ARN | `arn:aws:iam%`          |
+| `AWS_ACCESS_KEY`        | AWS IAM user's access key | `%`          |
+| `AWS_SECRET_KEY_ID`        | AWS IAM user's secret key| `%`          |
+
+**Bootstrap the environment outside of CI/CD**
+
+Make sure to use a <=10 chracter `--qualifier`:
+```
+npx cdk bootstrap \
+  --toolkit-stack-name CDKToolkit-scotustician \
+  --qualifier sctstcn \
+  aws://<AWS_ACCOUNT_ID>/<AWS_REGION>
+```
+Then update the `infra/cdk.json` accordingly:
+
+```
+{
+  "app": "npx ts-node --prefer-ts-exts bin/scotustician.ts",
+  "context": {
+    "aws:cdk:bootstrap-qualifier": "sctstcn"
+  }
+}
+``
+
 ## CI/CD
 
-This project uses GitHub Actions and AWS CDK to automatically build and deploy services:
-
-- GitHub Actions workflows (`.github/workflows/`) detect changes in `ingest/` or `transformers/`, build Docker images, and deploy via `cdk deploy`.
-- AWS resources are defined in `infra/lib/`, including:
-  - VPC and ECS Clusters
-  - Fargate and EC2 Task Definitions
-  - GPU-backed Auto Scaling Group for `transformers`
+On commits or pull requests to `main` the GitHub Actions workflow (`.github/workflows/deploy.yml`) detects changes in `ingest/` or `transformers/`, builds respective Docker images, and deploys via `cdk deploy`.
 
 ---
 

@@ -7,7 +7,8 @@ from helpers import (
     get_transcript_s3,
     generate_embeddings,
     save_embeddings,
-    index_to_opensearch
+    index_to_opensearch,
+    extract_metadata_from_key
 )
 from opensearchpy import OpenSearch, RequestsHttpConnection
 
@@ -35,8 +36,16 @@ def main():
 
         embeddings = generate_embeddings(chunks, model_name=args.model, batch_size=args.batch_size)
 
+        metadata = extract_metadata_from_key(args.input_key)
+
         # Output to S3
-        save_embeddings(embeddings, args.input_bucket, args.output_key)
+        save_embeddings(
+            embeddings=embeddings,
+            chunks=chunks,
+            bucket=args.input_bucket,
+            key=args.output_key,
+            metadata=metadata
+        )
 
         # Output to OpenSearch
         os_host = os.environ.get("OPENSEARCH_HOST")

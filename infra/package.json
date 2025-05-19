@@ -1,0 +1,23 @@
+{
+  "name": "scotustician-infra",
+  "version": "0.1.0",
+  "description": "CDK infrastructure for Scotustician project (shared, ingest, transformers)",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.114.1",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.11.30"
+  }
+}

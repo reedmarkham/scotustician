@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1955))
 END_TERM = int(os.getenv("END_TERM", 2025))
-BUCKET = os.getenv("BUCKET", "scotustician")
+BUCKET = os.getenv("S3_BUCKET", "scotustician")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 # --- Constants ---
