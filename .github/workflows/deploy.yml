@@ -1,0 +1,138 @@
+name: Deploy Scotustician Infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_shared: ${{ steps.filter.outputs.shared }}
+      deploy_ingest: ${{ steps.filter.outputs.ingest }}
+      deploy_transformers: ${{ steps.filter.outputs.transformers }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - 'infra/**'
+            ingest:
+              - 'infra/**'
+              - 'ingest/**'
+            transformers:
+              - 'infra/**'
+              - 'transformers/**'
+
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    if: needs.plan.outputs.deploy_shared == 'true' || needs.plan.outputs.deploy_ingest == 'true' || needs.plan.outputs.deploy_transformers == 'true'
+    strategy:
+      matrix:
+        stack: [shared, ingest, transformers]
+        include:
+          - stack: shared
+            deploy: ${{ needs.plan.outputs.deploy_shared }}
+            stack_name: ScotusticianSharedStack
+          - stack: ingest
+            deploy: ${{ needs.plan.outputs.deploy_ingest }}
+            stack_name: ScotusticianIngestStack
+          - stack: transformers
+            deploy: ${{ needs.plan.outputs.deploy_transformers }}
+            stack_name: ScotusticianTransformersStack
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TOOLKIT_STACK: CDKToolkit-scotustician
+      BOOTSTRAP_QUALIFIER: sctstcn
+      BUILD_TIMESTAMP: ${{ github.run_id }}-${{ github.run_number }}
+
+    steps:
+      - name: Skip if not needed
+        if: matrix.deploy != 'true'
+        run: |
+            echo "🛑 Skipping stack: ${{ matrix.stack_name }}"
+            exit 0
+
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install CDK dependencies
+        run: |
+          cd infra
+          npm install
+
+      - name: Validate CDK Bootstrap Qualifier
+        run: |
+          ACTUAL_QUALIFIER=$(aws cloudformation describe-stacks \
+            --stack-name $TOOLKIT_STACK \
+            --region $AWS_REGION \
+            --query "Stacks[0].Parameters[?ParameterKey=='Qualifier'].ParameterValue" \
+            --output text)
+
+          echo "✅ Found bootstrap qualifier: $ACTUAL_QUALIFIER"
+
+          if [ "$ACTUAL_QUALIFIER" != "$BOOTSTRAP_QUALIFIER" ]; then
+            echo "❌ Mismatch: expected '$BOOTSTRAP_QUALIFIER' but found '$ACTUAL_QUALIFIER'"
+            exit 1
+          fi
+
+      - name: Validate CDK App Configuration
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          ACTUAL=$(jq -r '.app' infra/cdk.json)
+          EXPECTED="npx ts-node --prefer-ts-exts bin/scotustician.ts"
+
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "❌ Error: cdk.json 'app' is misconfigured."
+            echo "Expected: $EXPECTED"
+            echo "Found:    $ACTUAL"
+            exit 1
+          else
+            echo "✅ cdk.json app configuration is correct."
+          fi
+
+      - name: Build CDK App
+        run: |
+          cd infra
+          npm run build
+
+      - name: Deploy ${{ matrix.stack_name }}
+        run: |
+          cd infra
+          npx cdk deploy \
+            --toolkit-stack-name $TOOLKIT_STACK \
+            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+            ${{ matrix.stack_name }} \
+            --outputs-file cdk-outputs-${{ matrix.stack }}.json \
+            --require-approval never
+
+      - name: Upload CDK Outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-outputs-${{ matrix.stack }}
+          path: infra/cdk-outputs-${{ matrix.stack }}.json

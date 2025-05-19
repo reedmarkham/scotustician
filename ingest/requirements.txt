@@ -1,0 +1,5 @@
+ratelimit==2.2.1
+requests==2.31.0
+boto3==1.34.77
+tqdm==4.66.2
+tenacity==8.2.3

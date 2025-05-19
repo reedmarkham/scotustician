@@ -1,40 +1,68 @@
-# Standard library imports
-import pprint
-import asyncio
-import json
+import argparse
+import logging
+import time
+import os
 
-# Helper file imports
-from helpers import format_size, count_oa, get_transcripts_embeddings_async, create_os_index, load_transcripts_os, generate_tsne_2d
+from helpers import (
+    get_transcript_s3,
+    generate_embeddings,
+    save_embeddings,
+    index_to_opensearch
+)
+from opensearchpy import OpenSearch, RequestsHttpConnection
 
-BUCKET = 'scotustician-oral-argument'
-N_TRANSCRIPTS = count_oa(BUCKET)
-INDEX_NAME = 'oral-argument'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# How many OAs in bucket?
-print(f'{count_oa(BUCKET)} OAs found in bucket: {BUCKET}')
+def main():
+    parser = argparse.ArgumentParser(description="Generate embeddings and save to S3 + OpenSearch.")
+    parser.add_argument("--input-bucket", required=True)
+    parser.add_argument("--input-key", required=True)
+    parser.add_argument("--output-key", required=True, help="S3 key for embeddings")
+    parser.add_argument("--index-name", required=True)
+    parser.add_argument("--model", default="all-MiniLM-L6-v2")
+    parser.add_argument("--batch-size", type=int, default=16)
+    args = parser.parse_args()
 
-# Build transcripts from S3 bucket contents (now async)
-transcripts_nested = asyncio.run(get_transcripts_embeddings_async(N_TRANSCRIPTS, BUCKET))
+    try:
+        start = time.time()
 
-# Flatten the list of lists (since each transcript is a list of utterances)
-transcripts = [item for sublist in transcripts_nested for item in sublist]
+        logger.info("🚀 Starting embedding + indexing pipeline")
+        chunks = get_transcript_s3(args.input_bucket, args.input_key)
 
-# Print dataset size as JSON
-json_size = len(json.dumps(transcripts).encode('utf-8'))
-print(f"Dataset size (JSON): {format_size(json_size)}")
+        if not chunks:
+            raise ValueError("Transcript is empty or missing.")
 
-# Show a sample transcript
-pprint.pprint(transcripts[0])
+        embeddings = generate_embeddings(chunks, model_name=args.model, batch_size=args.batch_size)
 
-# For `transcripts` what is max embedding vector size?
-embedding_dim = max(t['embedding_dim'] for t in transcripts)
+        # Output to S3
+        save_embeddings(embeddings, args.input_bucket, args.output_key)
 
-# Create OS index
-create_os_index(embedding_dim, INDEX_NAME)
+        # Output to OpenSearch
+        os_host = os.environ.get("OPENSEARCH_HOST")
+        if not os_host:
+            raise ValueError("❌ OPENSEARCH_HOST environment variable is not set")
 
-# Load transcripts to OpenSearch
-load_transcripts_os(transcripts, INDEX_NAME)
+        os_client = OpenSearch(
+            hosts=[os_host],
+            http_compress=True,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection
+        )
 
-# After loading data to OpenSearch:
-df_2d = generate_tsne_2d('oral-argument', n_samples=1000)
-print(df_2d.head())
+        index_to_opensearch(
+            embeddings=embeddings,
+            chunks=chunks,
+            index_name=args.index_name,
+            os_client=os_client,
+            source_key=args.input_key
+        )
+
+        logger.info(f"✅ Finished pipeline. Elapsed: {time.time() - start:.2f}s")
+
+    except Exception as e:
+        logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
+
+if __name__ == "__main__":
+    main()

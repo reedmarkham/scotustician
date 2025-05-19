@@ -1,6 +1,0 @@
-services:
-  fastapi:
-    build: .
-    container_name: scotustician
-    ports:
-      - "8000:8000"
