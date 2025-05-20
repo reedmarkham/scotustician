@@ -189,6 +189,28 @@ Then update the `infra/cdk.json` accordingly:
 }
 ```
 
+**Request vCPU quota increase for your AWS account**
+
+Per ChatGPT, AWS requires explicit quota requests especially for things like GPU or large EC2 instances:
+```
+Go to the EC2 vCPU Limits page:
+* https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas
+
+Look for the quota named:
+* Running On-Demand G and VT instances
+* OR Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances if you’re using a different instance type
+
+Click on the relevant quota
+* Request quota increase
+
+Request at least:
+* 4 vCPUs for g4dn.xlarge
+* More if you want to scale beyond 1 instance later
+
+Submit
+* AWS typically approves within a few hours to a day.
+```
+
 ## CI/CD
 
 On commits or pull requests to `main` the GitHub Actions workflow (`.github/workflows/deploy.yml`) detects changes in `ingest/` or `transformers/`, builds respective Docker images, and deploys via `cdk deploy`.
