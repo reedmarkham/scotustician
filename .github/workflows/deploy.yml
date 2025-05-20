@@ -63,9 +63,8 @@ jobs:
       - name: Skip if not needed
         if: matrix.deploy != 'true'
         run: |
-            echo "🛑 Skipping stack: ${{ matrix.stack_name }}"
-            exit 0
-
+          echo "🛑 Skipping stack: ${{ matrix.stack_name }}"
+          exit 0
 
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -85,7 +84,7 @@ jobs:
       - name: Install CDK dependencies
         run: |
           cd infra
-          npm install
+          npm ci
 
       - name: Validate CDK Bootstrap Qualifier
         run: |
@@ -120,7 +119,6 @@ jobs:
       - name: Deploy ${{ matrix.stack_name }}
         run: |
           cd infra
-          npx ts-node --prefer-ts-exts bin/scotustician.ts
           npx cdk deploy \
             --toolkit-stack-name $TOOLKIT_STACK \
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
