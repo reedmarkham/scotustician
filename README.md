@@ -187,7 +187,7 @@ Then update the `infra/cdk.json` accordingly:
     "aws:cdk:bootstrap-qualifier": "sctstcn"
   }
 }
-``
+```
 
 ## CI/CD
 
