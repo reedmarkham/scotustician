@@ -117,14 +117,10 @@ jobs:
             echo "✅ cdk.json app configuration is correct."
           fi
 
-      - name: Build CDK App
-        run: |
-          cd infra
-          npm run build
-
       - name: Deploy ${{ matrix.stack_name }}
         run: |
           cd infra
+          npx ts-node --prefer-ts-exts bin/scotustician.ts
           npx cdk deploy \
             --toolkit-stack-name $TOOLKIT_STACK \
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
