@@ -1,6 +1,6 @@
 {
-  "app": "node --loader ts-node/esm bin/scotustician.ts",
+  "app": "npx ts-node --prefer-ts-exts bin/scotustician.ts",
   "context": {
-    "@aws-cdk/core:newStyleStackSynthesis": true
+    "bootstrapQualifier": "sctstcn"
   }
 }

@@ -77,10 +77,9 @@ site/
 *~
 my_env/
 
-# Node.js / CDK
+# Node.js / CDK output
 node_modules/
 cdk.out/
-package-lock.json
 
 # TypeScript
 *.tsbuildinfo

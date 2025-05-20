@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
+import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 
 export interface ScotusticianIngestStackProps extends StackProps {
   cluster: ecs.Cluster;
@@ -11,7 +12,14 @@ export interface ScotusticianIngestStackProps extends StackProps {
 
 export class ScotusticianIngestStack extends Stack {
   constructor(scope: Construct, id: string, props: ScotusticianIngestStackProps) {
-    super(scope, id, props);
+    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+
+    super(scope, id, {
+      ...props,
+      synthesizer: new DefaultStackSynthesizer({
+        qualifier: qualifier,
+      }),
+    });
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
       directory: '../ingest',

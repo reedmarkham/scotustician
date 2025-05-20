@@ -5,6 +5,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 
 export interface ScotusticianTransformersStackProps extends StackProps {
   vpc: ec2.IVpc;
@@ -13,7 +14,14 @@ export interface ScotusticianTransformersStackProps extends StackProps {
 
 export class ScotusticianTransformersStack extends Stack {
   constructor(scope: Construct, id: string, props: ScotusticianTransformersStackProps) {
-    super(scope, id, props);
+    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+
+    super(scope, id, {
+      ...props,
+      synthesizer: new DefaultStackSynthesizer({
+        qualifier: qualifier,
+      }),
+    });
 
     const { vpc, cluster } = props;
 
