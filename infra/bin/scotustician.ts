@@ -14,4 +14,8 @@ new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
 new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
   cluster: shared.cluster,
   vpc: shared.vpc,
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
 });
