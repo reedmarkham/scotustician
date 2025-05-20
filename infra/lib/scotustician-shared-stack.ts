@@ -42,7 +42,6 @@ export class ScotusticianSharedStack extends Stack {
     const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'GPUFleet', {
       vpc: this.vpc,
       instanceType: new ec2.InstanceType('g4dn.xlarge'),
-      machineImage: gpuAmi,
       minCapacity: 1,
       launchTemplate: launchTemplate,
     });
