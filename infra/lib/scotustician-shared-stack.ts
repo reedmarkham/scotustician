@@ -9,7 +9,12 @@ export class ScotusticianSharedStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
+    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    
+        super(scope, id, {
+          ...props,
+          synthesizer: new cdk.DefaultStackSynthesizer({ qualifier }),
+        });
 
     this.vpc = new ec2.Vpc(this, 'ScotusticianVpc', { maxAzs: 2 });
     this.cluster = new ecs.Cluster(this, 'ScotusticianCluster', {
