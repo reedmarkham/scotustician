@@ -1,9 +1,6 @@
 {
   "name": "scotustician",
   "version": "0.1.0",
-  "bin": {
-    "scotustician-db": "bin/scotustician.ts"
-  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
