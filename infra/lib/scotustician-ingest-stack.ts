@@ -1,9 +1,11 @@
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 
 export interface ScotusticianIngestStackProps extends StackProps {
   cluster: ecs.Cluster;
@@ -32,7 +34,7 @@ export class ScotusticianIngestStack extends Stack {
 
     bucket.grantReadWrite(taskDefinition.taskRole);
 
-    taskDefinition.addContainer('IngestContainer', {
+    const container = taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
       cpu: 1024,
       memoryLimitMiB: 4096,
@@ -44,6 +46,34 @@ export class ScotusticianIngestStack extends Stack {
 
     new CfnOutput(this, 'IngestTaskDefinitionArn', {
       value: taskDefinition.taskDefinitionArn,
+    });
+
+    new CfnOutput(this, 'IngestContainerName', {
+      value: container.containerName,
+    });
+
+    const logGroup = new logs.LogGroup(this, 'IngestLogGroup', {
+      logGroupName: '/ecs/ingest',
+      removalPolicy: RemovalPolicy.DESTROY,
+      retention: logs.RetentionDays.ONE_WEEK,
+    });
+
+    const errorFilter = new logs.MetricFilter(this, 'IngestErrorMetricFilter', {
+      logGroup,
+      metricName: 'IngestErrors',
+      metricNamespace: 'Scotustician',
+      filterPattern: logs.FilterPattern.stringValue('$.level', '=', 'ERROR'),
+      metricValue: '1',
+    });
+
+    new cloudwatch.Alarm(this, 'IngestErrorAlarm', {
+      metric: errorFilter.metric(),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: 'Alarm if any ERROR-level logs are detected in the ingest container.',
     });
   }
 }

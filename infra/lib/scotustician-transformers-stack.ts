@@ -1,13 +1,11 @@
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, Duration } from 'aws-cdk-lib';
-import * as cdk from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 
 export interface ScotusticianTransformersStackProps extends StackProps {
   vpc: ec2.IVpc;
@@ -23,34 +21,10 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    const { vpc, cluster } = props;
-
-    // --- Look up latest ECS-optimized GPU AMI ---
-    const ecsGpuAmi = ec2.MachineImage.lookup({
-      name: 'amzn2-ami-ecs-gpu*',
-      owners: ['amazon'],
-    });
-
-    // --- EC2 ASG with GPU Instances ---
-    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'GPUFleet', {
-      vpc,
-      instanceType: new ec2.InstanceType('g4dn.xlarge'),
-      machineImage: ecsGpuAmi,
-      minCapacity: 1,
-    });
-
-    const capacityProvider = new ecs.AsgCapacityProvider(this, 'AsgCapacityProvider', {
-      autoScalingGroup,
-    });
-
-    cluster.addAsgCapacityProvider(capacityProvider);
-
-    // --- Docker Image Asset (builds ../transformers) ---
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
       directory: '../transformers',
     });
 
-    // --- ECS Task Definition (EC2 + GPU) ---
     const taskDefinition = new ecs.Ec2TaskDefinition(this, 'TransformersTaskDef', {
       networkMode: ecs.NetworkMode.AWS_VPC,
     });
@@ -75,7 +49,6 @@ export class ScotusticianTransformersStack extends Stack {
       hardLimit: 65536,
     });
 
-    // --- IAM Permissions for S3 + OpenSearch ---
     taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['es:ESHttpPost', 'es:ESHttpPut', 'es:ESHttpGet', 'es:ESHttpHead'],
       resources: [`arn:aws:es:us-east-1:${this.account}:domain/scotusticianope-x0u0hjgyswq0/*`],
@@ -86,7 +59,6 @@ export class ScotusticianTransformersStack extends Stack {
       resources: ['arn:aws:s3:::scotustician', 'arn:aws:s3:::scotustician/*'],
     }));
 
-    // --- Outputs ---
     new CfnOutput(this, 'TransformersTaskDefinitionArn', {
       value: taskDefinition.taskDefinitionArn,
     });
@@ -95,10 +67,9 @@ export class ScotusticianTransformersStack extends Stack {
       value: container.containerName,
     });
 
-    // --- CloudWatch Alarms / Metrics ---
     const logGroup = new logs.LogGroup(this, 'TransformersLogGroup', {
-      logGroupName: `/ecs/transformers`,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      logGroupName: '/ecs/transformers',
+      removalPolicy: RemovalPolicy.DESTROY,
       retention: logs.RetentionDays.ONE_WEEK,
     });
 
@@ -110,10 +81,8 @@ export class ScotusticianTransformersStack extends Stack {
       metricValue: '1',
     });
 
-    const errorMetric = errorFilter.metric();
-
     new cloudwatch.Alarm(this, 'TransformerErrorAlarm', {
-      metric: errorMetric,
+      metric: errorFilter.metric(),
       threshold: 1,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
