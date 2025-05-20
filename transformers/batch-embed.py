@@ -1,6 +1,7 @@
 import os
 import subprocess
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
@@ -23,7 +24,7 @@ def list_s3_keys(bucket, prefix):
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
-            yield obj["Key"]
+            yield {"Key": obj["Key"], "Size": obj["Size"]}
 
 def output_exists(bucket, key):
     try:
@@ -32,7 +33,10 @@ def output_exists(bucket, key):
     except s3.exceptions.ClientError:
         return False
 
-def run_pipeline(input_key: str):
+def run_pipeline(obj: dict):
+    input_key = obj["Key"]
+    input_size = obj["Size"]
+
     if not input_key.endswith(".json"):
         return f"⏩ Skipped (not JSON): {input_key}"
 
@@ -50,24 +54,34 @@ def run_pipeline(input_key: str):
         "--batch-size", BATCH_SIZE
     ]
 
+    start = time.time()
     try:
         subprocess.run(cmd, check=True)
-        return f"✅ Processed: {input_key}"
+        duration = time.time() - start
+        size_mb = input_size / (1024 * 1024)
+        return f"✅ Processed: {input_key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s"
     except subprocess.CalledProcessError as e:
-        return f"❌ Failed: {input_key} | Error: {e}"
+        duration = time.time() - start
+        return f"❌ Failed: {input_key} | ⏱ {duration:.2f}s | Error: {e}"
 
 def main():
     logger.info(f"📦 Scanning S3 for keys under s3://{INPUT_BUCKET}/{RAW_PREFIX}")
-    keys = list(list_s3_keys(INPUT_BUCKET, RAW_PREFIX))
-    logger.info(f"🧮 Found {len(keys)} keys")
+    objects = list(list_s3_keys(INPUT_BUCKET, RAW_PREFIX))
+    logger.info(f"🧮 Found {len(objects)} keys")
+
+    start_time = time.time()
+    processed = 0
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(run_pipeline, key): key for key in keys}
+        futures = {executor.submit(run_pipeline, obj): obj for obj in objects}
         for future in as_completed(futures):
             result = future.result()
             logger.info(result)
+            if result.startswith("✅ Processed"):
+                processed += 1
 
-    logger.info("🎉 Parallel batch job complete.")
+    total_duration = time.time() - start_time
+    logger.info(f"🎉 Completed {processed} file(s) in {total_duration:.2f} seconds.")
 
 if __name__ == "__main__":
     main()

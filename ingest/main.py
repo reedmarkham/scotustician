@@ -5,6 +5,7 @@ import logging
 from typing import Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import time
 
 # Third-party libraries
 from ratelimit import limits, sleep_and_retry
@@ -62,20 +63,23 @@ def get_cases_by_term(term: int) -> Optional[list]:
 def get_case_full(term: int, docket_number: str) -> Optional[dict]:
     return request(oyez_api_case(term, docket_number))
 
-def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) -> None:
+def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) -> Optional[float]:
     case_id = case.get('ID')
     docket_number = case.get('docket_number')
     oa_id = oa.get('id')
     oa_href = oa.get('href')
+
     if not oa_id or not oa_href:
         logger.warning(f"Skipping malformed OA entry: {oa}")
-        return
+        return None
 
     key = f'raw/oa/{oa_id}_{timestamp}.json'
+    start_time = time.time()
+
     oa_json = request(oa_href)
     if oa_json is None:
         logger.warning(f"No data for OA {oa_id} (term {term}, docket {docket_number})")
-        return
+        return None
 
     oa_json.update({
         "term": term,
@@ -84,11 +88,18 @@ def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) ->
         "session": session,
     })
 
+    serialized = json.dumps(oa_json)
+    size_bytes = len(serialized.encode("utf-8"))
+    size_mb = size_bytes / (1024 * 1024)
+
     if DRY_RUN:
-        logger.info(f"[DRY-RUN] Would upload: s3://{BUCKET}/{key}")
+        logger.info(f"[DRY-RUN] Would upload: s3://{BUCKET}/{key} | Size: {size_mb:.2f} MB")
     else:
-        s3.put_object(Body=json.dumps(oa_json), Bucket=BUCKET, Key=key)
-        logger.info(f"Uploaded: s3://{BUCKET}/{key}")
+        s3.put_object(Body=serialized, Bucket=BUCKET, Key=key)
+        duration = time.time() - start_time
+        logger.info(f"✅ Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
+
+    return size_mb
 
 def process_case(term: int, case: dict, timestamp: str) -> list:
     docket_number = case.get('docket_number')
@@ -107,7 +118,8 @@ def process_case(term: int, case: dict, timestamp: str) -> list:
 
 # --- Main driver ---
 def main() -> None:
-    logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
+    logger.info(f"🚀 Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
+    start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     tasks = []
 
@@ -117,21 +129,30 @@ def main() -> None:
             if not cases:
                 logger.warning(f"No cases returned for term {term}")
                 continue
-
             for case in cases:
                 tasks.extend(process_case(term, case, timestamp))
-
         except Exception as e:
             logger.error(f"Failed to process term {term}: {e}")
 
-    logger.info(f"Dispatching {len(tasks)} oral argument tasks to thread pool...")
+    logger.info(f"🧮 Dispatching {len(tasks)} oral argument tasks to thread pool...")
+
+    total_uploaded = 0
+    total_bytes = 0
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(process_oa, *args) for args in tasks]
-        for _ in tqdm(as_completed(futures), total=len(futures), desc="Processing OAs"):
-            pass  # results and errors are logged inside `process_oa`
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing OAs"):
+            try:
+                size_mb = future.result()
+                if size_mb is not None:
+                    total_uploaded += 1
+                    total_bytes += size_mb
+            except Exception as e:
+                logger.error(f"Exception during task: {e}")
 
-    logger.info("🎉 All tasks completed.")
+    duration = time.time() - start_time
+    logger.info(f"🎉 Completed {total_uploaded} uploads | Total size: {total_bytes:.2f} MB | Total time: {duration:.2f}s")
+
 
 if __name__ == "__main__":
     main()

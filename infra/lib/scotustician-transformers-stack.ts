@@ -1,11 +1,10 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 
 export interface ScotusticianTransformersStackProps extends StackProps {
   vpc: ec2.IVpc;
