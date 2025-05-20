@@ -1,77 +1,32 @@
-import argparse
-import logging
-import time
 import os
-
+from opensearchpy import OpenSearch
 from helpers import (
     get_transcript_s3,
-    generate_embeddings,
-    save_embeddings,
-    index_to_opensearch,
-    extract_metadata_from_key
+    generate_case_embedding,
+    extract_metadata_from_key,
+    ensure_index_exists,
+    index_case_embedding_to_opensearch,
 )
-from opensearchpy import OpenSearch, RequestsHttpConnection
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+BUCKET = os.getenv("S3_BUCKET", "scotustician")
+INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
+MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate embeddings and save to S3 + OpenSearch.")
-    parser.add_argument("--input-bucket", required=True)
-    parser.add_argument("--input-key", required=True)
-    parser.add_argument("--output-key", required=True, help="S3 key for embeddings")
-    parser.add_argument("--index-name", required=True)
-    parser.add_argument("--model", default="all-MiniLM-L6-v2")
-    parser.add_argument("--batch-size", type=int, default=16)
-    args = parser.parse_args()
+os_client = OpenSearch(
+    hosts=[{'host': os.getenv("OPENSEARCH_HOST", "localhost"), 'port': 443}],
+    http_auth=('admin', os.getenv("OPENSEARCH_PASS", "")),
+    use_ssl=True,
+    verify_certs=True
+)
 
-    try:
-        start = time.time()
-
-        logger.info("🚀 Starting embedding + indexing pipeline")
-        chunks = get_transcript_s3(args.input_bucket, args.input_key)
-
-        if not chunks:
-            raise ValueError("Transcript is empty or missing.")
-
-        embeddings = generate_embeddings(chunks, model_name=args.model, batch_size=args.batch_size)
-
-        metadata = extract_metadata_from_key(args.input_key)
-
-        # Output to S3
-        save_embeddings(
-            embeddings=embeddings,
-            chunks=chunks,
-            bucket=args.input_bucket,
-            key=args.output_key,
-            metadata=metadata
-        )
-
-        # Output to OpenSearch
-        os_host = os.environ.get("OPENSEARCH_HOST")
-        if not os_host:
-            raise ValueError("❌ OPENSEARCH_HOST environment variable is not set")
-
-        os_client = OpenSearch(
-            hosts=[os_host],
-            http_compress=True,
-            use_ssl=True,
-            verify_certs=True,
-            connection_class=RequestsHttpConnection
-        )
-
-        index_to_opensearch(
-            embeddings=embeddings,
-            chunks=chunks,
-            index_name=args.index_name,
-            os_client=os_client,
-            source_key=args.input_key
-        )
-
-        logger.info(f"✅ Finished pipeline. Elapsed: {time.time() - start:.2f}s")
-
-    except Exception as e:
-        logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
+def run(bucket: str, input_key: str):
+    chunks = get_transcript_s3(bucket, input_key)
+    meta = extract_metadata_from_key(input_key)
+    embedding, full_text = generate_case_embedding(chunks, MODEL_NAME, BATCH_SIZE)
+    ensure_index_exists(os_client, INDEX_NAME)
+    index_case_embedding_to_opensearch(embedding, full_text, meta, input_key, INDEX_NAME, os_client)
 
 if __name__ == "__main__":
-    main()
+    INPUT_KEY = os.environ["INPUT_KEY"]
+    run(BUCKET, INPUT_KEY)

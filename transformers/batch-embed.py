@@ -1,87 +1,61 @@
 import os
-import subprocess
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from helpers import (
+    get_transcript_s3,
+    generate_case_embedding,
+    extract_metadata_from_key,
+    ensure_index_exists,
+    index_case_embedding_to_opensearch
+)
 import boto3
+from opensearchpy import OpenSearch
 
-# --- Config ---
-INPUT_BUCKET = os.environ.get("S3_BUCKET", "scotustician")
-RAW_PREFIX = "raw/"
-OUTPUT_PREFIX = "oa-embeddings/"
-INDEX_NAME = "scotus-oa-embeddings"
-MODEL = "all-MiniLM-L6-v2"
-BATCH_SIZE = "16"
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "4"))
+BUCKET = os.getenv("S3_BUCKET", "scotustician")
+PREFIX = os.getenv("RAW_PREFIX", "raw/")
+INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
+MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", 4))
 
-# --- Setup ---
 s3 = boto3.client("s3")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def list_s3_keys(bucket, prefix):
+os_client = OpenSearch(
+    hosts=[{'host': os.getenv("OPENSEARCH_HOST", "localhost"), 'port': 443}],
+    http_auth=('admin', os.getenv("OPENSEARCH_PASS", "")),
+    use_ssl=True,
+    verify_certs=True
+)
+
+def list_s3_keys(bucket: str, prefix: str):
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
-            yield {"Key": obj["Key"], "Size": obj["Size"]}
+            yield obj["Key"]
 
-def output_exists(bucket, key):
+def process_key(key: str):
     try:
-        s3.head_object(Bucket=bucket, Key=key)
-        return True
-    except s3.exceptions.ClientError:
-        return False
-
-def run_pipeline(obj: dict):
-    input_key = obj["Key"]
-    input_size = obj["Size"]
-
-    if not input_key.endswith(".json"):
-        return f"⏩ Skipped (not JSON): {input_key}"
-
-    output_key = input_key.replace(RAW_PREFIX, OUTPUT_PREFIX)
-    if output_exists(INPUT_BUCKET, output_key):
-        return f"✅ Skipped (already processed): {input_key}"
-
-    cmd = [
-        "python", "main.py",
-        "--input-bucket", INPUT_BUCKET,
-        "--input-key", input_key,
-        "--output-key", output_key,
-        "--index-name", INDEX_NAME,
-        "--model", MODEL,
-        "--batch-size", BATCH_SIZE
-    ]
-
-    start = time.time()
-    try:
-        subprocess.run(cmd, check=True)
-        duration = time.time() - start
-        size_mb = input_size / (1024 * 1024)
-        return f"✅ Processed: {input_key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s"
-    except subprocess.CalledProcessError as e:
-        duration = time.time() - start
-        return f"❌ Failed: {input_key} | ⏱ {duration:.2f}s | Error: {e}"
+        chunks = get_transcript_s3(BUCKET, key)
+        embedding, text = generate_case_embedding(chunks, MODEL_NAME, BATCH_SIZE)
+        meta = extract_metadata_from_key(key)
+        index_case_embedding_to_opensearch(embedding, text, meta, key, INDEX_NAME, os_client)
+        return f"✅ Processed: {key}"
+    except Exception as e:
+        return f"❌ Failed: {key} | {e}"
 
 def main():
-    logger.info(f"📦 Scanning S3 for keys under s3://{INPUT_BUCKET}/{RAW_PREFIX}")
-    objects = list(list_s3_keys(INPUT_BUCKET, RAW_PREFIX))
-    logger.info(f"🧮 Found {len(objects)} keys")
-
-    start_time = time.time()
-    processed = 0
+    logger.info(f"🔍 Scanning s3://{BUCKET}/{PREFIX}")
+    keys = list(list_s3_keys(BUCKET, PREFIX))
+    ensure_index_exists(os_client, INDEX_NAME)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(run_pipeline, obj): obj for obj in objects}
+        futures = [executor.submit(process_key, key) for key in keys]
         for future in as_completed(futures):
-            result = future.result()
-            logger.info(result)
-            if result.startswith("✅ Processed"):
-                processed += 1
+            logger.info(future.result())
 
-    total_duration = time.time() - start_time
-    logger.info(f"🎉 Completed {processed} file(s) in {total_duration:.2f} seconds.")
+    logger.info("🎉 Batch embedding complete.")
 
 if __name__ == "__main__":
     main()
