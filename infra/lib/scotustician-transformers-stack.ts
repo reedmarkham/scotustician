@@ -58,7 +58,7 @@ export class ScotusticianTransformersStack extends Stack {
       gpuCount: 1,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
       environment: {
-        OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://your-domain.region.es.amazonaws.com',
+        OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
         S3_BUCKET: 'scotustician',
         MAX_WORKERS: '4',
       },
@@ -79,5 +79,30 @@ export class ScotusticianTransformersStack extends Stack {
     taskDefinition.taskRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonOpenSearchServiceFullAccess')
     );
+
+    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'es:ESHttpPost',
+        'es:ESHttpPut',
+        'es:ESHttpGet',
+        'es:ESHttpHead',
+      ],
+      resources: [
+        `arn:aws:es:us-east-1:${this.account}:domain/scotusticianope-x0u0hjgyswq0/*`
+      ]
+    }));
+
+  taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+    actions: [
+      's3:GetObject',
+      's3:ListBucket',
+      's3:PutObject',
+    ],
+    resources: [
+      'arn:aws:s3:::scotustician',
+      'arn:aws:s3:::scotustician/*',
+    ],
+  }));
+
   }
 }
