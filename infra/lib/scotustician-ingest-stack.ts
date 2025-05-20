@@ -1,4 +1,4 @@
-import { Stack, StackProps, DefaultStackSynthesizer } from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -25,24 +25,25 @@ export class ScotusticianIngestStack extends Stack {
       directory: '../ingest',
     });
 
-    const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef');
+    const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
+      cpu: 1024,
+      memoryLimitMiB: 4096,
+    });
 
     bucket.grantReadWrite(taskDefinition.taskRole);
 
-    const container = taskDefinition.addContainer('IngestContainer', {
+    taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
-      memoryLimitMiB: 4096,
       cpu: 1024,
+      memoryLimitMiB: 4096,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         BUCKET_NAME: bucket.bucketName,
       },
     });
 
-    new ecs.FargateService(this, 'IngestService', {
-      cluster: props.cluster,
-      taskDefinition,
-      desiredCount: 1,
+    new CfnOutput(this, 'IngestTaskDefinitionArn', {
+      value: taskDefinition.taskDefinitionArn,
     });
   }
 }
