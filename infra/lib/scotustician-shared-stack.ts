@@ -33,11 +33,18 @@ export class ScotusticianSharedStack extends Stack {
       owners: ['amazon'],
     });
 
+    const launchTemplate = new ec2.LaunchTemplate(this, 'GpuLaunchTemplate', {
+      instanceType: new ec2.InstanceType('g4dn.xlarge'),
+      machineImage: gpuAmi,
+      launchTemplateName: 'ScotusticianGpuTemplate',
+    });
+
     const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'GPUFleet', {
       vpc: this.vpc,
       instanceType: new ec2.InstanceType('g4dn.xlarge'),
       machineImage: gpuAmi,
       minCapacity: 1,
+      launchTemplate: launchTemplate,
     });
 
     const capacityProvider = new ecs.AsgCapacityProvider(this, 'AsgCapacityProvider', {
