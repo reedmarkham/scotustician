@@ -22,7 +22,7 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'search-scotusticianope-x0u0hjgyswq0-vwz6jxhrrfq2447s3comzf7wna.us-east-1.es.amazonaws.com';
+    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'search-scotusticianope-7blhq5zpznol-eiecodmuf22elz7mvu2cx23qsu.us-east-1.es.amazonaws.com';
     const opensearchPass = this.node.tryGetContext('opensearchPass') || 'REPOSITORY_SECRET';
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
