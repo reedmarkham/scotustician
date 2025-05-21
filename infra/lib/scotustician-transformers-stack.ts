@@ -31,7 +31,7 @@ export class ScotusticianTransformersStack extends Stack {
 
     const container = taskDefinition.addContainer('TransformersContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
-      memoryLimitMiB: 8192,
+      memoryLimitMiB: 6144,
       cpu: 512,
       gpuCount: 1,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
@@ -57,6 +57,11 @@ export class ScotusticianTransformersStack extends Stack {
     taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['s3:GetObject', 's3:ListBucket', 's3:PutObject'],
       resources: ['arn:aws:s3:::scotustician', 'arn:aws:s3:::scotustician/*'],
+    }));
+
+    taskDefinition.addToExecutionRolePolicy(new iam.PolicyStatement({
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: ['*'],
     }));
 
     new CfnOutput(this, 'TransformersTaskDefinitionArn', {
