@@ -37,6 +37,15 @@ scotustician/
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in an [OpenSearch vector database](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
+After tasks complete, S3 bucket will look like:
+```
+scotustician/
+├── raw/oa      # Raw oral argument JSON files
+├── xml 		# Serialized XML for the oral argument transcripts if raw data contains this
+├── junk/      	# Raw oral argument JSON files malformed, missing key data, etc.
+├── logs/       # JSON representations of pipeline metrics, later to be queried in Athena, etc.
+```
+
 ---
 
 ## Prerequisites
