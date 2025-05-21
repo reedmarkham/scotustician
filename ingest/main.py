@@ -57,6 +57,7 @@ def request(url: str) -> Optional[dict]:
         raise Exception(f"Failed to retrieve {url}")
     return result
 
+# Oyez.org API while undocumented reliably returns a list of cases for a given term
 def get_cases_by_term(term: int) -> list:
     response = request(OYEZ_CASES_TERM_PREFIX + str(term))
     if not isinstance(response, list):

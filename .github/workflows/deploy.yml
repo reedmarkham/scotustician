@@ -26,8 +26,8 @@ jobs:
               - 'infra/**'
               - '.github/workflows/**'
             ingest:
-              - 'ingest/*'
               - 'infra/**'
+              - 'ingest/*'
               - 'ingest/**/*'
             transformers:
               - 'infra/**'
