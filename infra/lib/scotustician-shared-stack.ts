@@ -1,7 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
 export class ScotusticianSharedStack extends cdk.Stack {
@@ -42,65 +42,41 @@ export class ScotusticianSharedStack extends cdk.Stack {
       vpc: this.vpc,
     });
 
-    // --- GPU ECS AMI ---
-    const gpuAmi = ec2.MachineImage.lookup({
-      name: 'amzn2-ami-ecs-gpu*',
-      owners: ['amazon'],
+    // --- IAM Role ---
+    const instanceRole = new iam.Role(this, 'GpuInstanceRole', {
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
+      ],
     });
 
-    // --- Launch Template ---
-    const lt = new ec2.CfnLaunchTemplate(this, 'GpuLaunchTemplate', {
-      launchTemplateName: 'ScotusticianGpuTemplate',
-      launchTemplateData: {
-        instanceType: 'g4dn.micro',
-        imageId: gpuAmi.getImage(this).imageId,
-      },
+    // --- Security Group ---
+    const instanceSG = new ec2.SecurityGroup(this, 'GpuInstanceSG', {
+      vpc: this.vpc,
+      allowAllOutbound: true,
+      description: 'ECS GPU instance SG',
     });
 
-    // --- L1 Auto Scaling Group (MixedInstancesPolicy required) ---
-    const asg = new autoscaling.CfnAutoScalingGroup(this, 'GPUFleetASG', {
-      vpcZoneIdentifier: this.vpc.privateSubnets.map(subnet => subnet.subnetId),
-      minSize: '1',
-      maxSize: '1',
-      mixedInstancesPolicy: {
-        launchTemplate: {
-          launchTemplateSpecification: {
-            launchTemplateId: lt.ref,
-            version: lt.attrLatestVersionNumber,
-          },
-          overrides: [], // optional, but required by AWS schema
-        },
-      },
+    // --- g4dn.micro GPU instance (1 vCPU) ---
+    const instance = new ec2.Instance(this, 'GpuInstance', {
+      vpc: this.vpc,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.G4DN, ec2.InstanceSize.MICRO),
+      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      role: instanceRole,
+      securityGroup: instanceSG,
     });
 
-    const asgArn = `arn:aws:autoscaling:${this.region}:${this.account}:autoScalingGroup:*:autoScalingGroupName/${asg.ref}`;
+    // --- Register with ECS cluster + enable GPU support ---
+    instance.userData.addCommands(
+      `echo "ECS_CLUSTER=${this.cluster.clusterName}" >> /etc/ecs/ecs.config`,
+      'echo "ECS_ENABLE_GPU_SUPPORT=true" >> /etc/ecs/ecs.config',
+      'systemctl enable --now ecs'
+    );
 
-    const cp = new ecs.CfnCapacityProvider(this, 'GpuCapacityProvider', {
-      name: 'GpuCapacityProvider',
-      autoScalingGroupProvider: {
-        autoScalingGroupArn: asgArn,
-        managedScaling: {
-          status: 'ENABLED',
-          targetCapacity: 100,
-          minimumScalingStepSize: 1,
-          maximumScalingStepSize: 1,
-          instanceWarmupPeriod: 60,
-        },
-        managedTerminationProtection: 'DISABLED',
-      },
-    });
-
-    // Attach capacity provider to the ECS cluster
-    const clusterResource = this.cluster.node.defaultChild as ecs.CfnCluster;
-    clusterResource.capacityProviders = [cp.name!];
-    clusterResource.addDependency(cp);
-
-    // 🛠 You can't use AsgCapacityProvider directly with L1 constructs
-    // Instead, you can optionally output the Launch Template or ASG ID if needed
-    new cdk.CfnOutput(this, 'LaunchTemplateId', { value: lt.ref });
-    new cdk.CfnOutput(this, 'ASGName', { value: asg.ref });
-    new cdk.CfnOutput(this, 'PrivateSubnetId', {value: this.vpc.privateSubnets[0].subnetId,});
-    new cdk.CfnOutput(this, 'ClusterName', {value: this.cluster.clusterName,});
-
+    // --- Outputs ---
+    new cdk.CfnOutput(this, 'GpuInstanceId', { value: instance.instanceId });
+    new cdk.CfnOutput(this, 'ClusterName', { value: this.cluster.clusterName });
+    new cdk.CfnOutput(this, 'PrivateSubnetId', { value: this.vpc.privateSubnets[0].subnetId });
   }
 }
