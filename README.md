@@ -191,7 +191,7 @@ Then update the `infra/cdk.json` accordingly:
 
 **Request vCPU quota increase for your AWS account**
 
-Per ChatGPT, AWS requires explicit quota requests especially for things like GPU or large EC2 instances:
+AWS requires explicit quota requests especially for things like GPU or large EC2 instances:
 ```
 Go to the EC2 vCPU Limits page:
 * https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas
@@ -203,12 +203,51 @@ Look for the quota named:
 Click on the relevant quota
 * Request quota increase
 
-Request at least:
-* 4 vCPUs for g4dn.xlarge
-* More if you want to scale beyond 1 instance later
-
 Submit
-* AWS typically approves within a few hours to a day.
+* AWS typically approves within a few hours to a day, especially for small (1 instance) increases.
+```
+
+**Run the tasks in an ad-hoc script**
+
+Review the stack output for subnet and cluster names, and then:
+```
+#!/bin/bash
+
+# === Fargate Ingest Task ===
+CLUSTER_NAME="ScotusticianCluster"
+TASK_DEF="ScotusticianIngestStack-IngestTaskDefXXXXXXXX"  # Replace with actual ARN or family name
+SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                      # Private subnet with NAT access
+SG_ID="sg-xxxxxxxxxxxxxxxxx"                              # SG allowing outbound HTTPS
+REGION="us-east-1"
+
+aws ecs run-task \
+  --cluster "$CLUSTER_NAME" \
+  --launch-type FARGATE \
+  --task-definition "$TASK_DEF" \
+  --count 1 \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
+  --region "$REGION"
+```
+
+```
+#!/bin/bash
+
+# === EC2 Transformers Task (GPU) ===
+CLUSTER_NAME="ScotusticianCluster"
+TASK_DEF="ScotusticianTransformersStack-TransformersTaskDefXXXXXXXX"  # Replace with actual ARN or family
+SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                                  # Private subnet for EC2 instance
+SG_ID="sg-xxxxxxxxxxxxxxxxx"                                          # SG allowing outbound traffic
+REGION="us-east-1"
+CAPACITY_PROVIDER="GpuCapacityProvider"
+
+aws ecs run-task \
+  --cluster "$CLUSTER_NAME" \
+  --launch-type EC2 \
+  --task-definition "$TASK_DEF" \
+  --count 1 \
+  --capacity-provider-strategy "capacityProvider=$CAPACITY_PROVIDER,weight=1" \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
+  --region "$REGION"
 ```
 
 ## CI/CD

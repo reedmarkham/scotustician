@@ -22,8 +22,14 @@ export class ScotusticianSharedStack extends cdk.Stack {
       natGateways: 1,
       subnetConfiguration: [
         {
+          name: 'public',
+          subnetType: ec2.SubnetType.PUBLIC,
+          cidrMask: 24,
+        },
+        {
           name: 'private',
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+          cidrMask: 24,
         },
       ],
     });
@@ -92,5 +98,8 @@ export class ScotusticianSharedStack extends cdk.Stack {
     // Instead, you can optionally output the Launch Template or ASG ID if needed
     new cdk.CfnOutput(this, 'LaunchTemplateId', { value: lt.ref });
     new cdk.CfnOutput(this, 'ASGName', { value: asg.ref });
+    new cdk.CfnOutput(this, 'PrivateSubnetId', {value: this.vpc.privateSubnets[0].subnetId,});
+    new cdk.CfnOutput(this, 'ClusterName', {value: this.cluster.clusterName,});
+
   }
 }
