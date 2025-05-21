@@ -150,7 +150,7 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Failed to process term {term}: {e}")
 
-    logger.info(f"🧮 Dispatching {len(tasks)} oral argument tasks to thread pool...")
+    logger.info(f"Dispatching {len(tasks)} oral argument tasks to thread pool...")
 
     total_uploaded = 0
     total_bytes = 0
