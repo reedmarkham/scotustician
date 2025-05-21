@@ -29,6 +29,7 @@ export class ScotusticianTransformersStack extends Stack {
     let taskDefinition: ecs.TaskDefinition;
     let container: ecs.ContainerDefinition;
 
+    // Received from CI/CD: based on AWS GPU quota decide whether to use GPU or CPU downstream
     if (useGpu) {
       taskDefinition = new ecs.Ec2TaskDefinition(this, 'TransformersGpuTaskDef', {
         networkMode: ecs.NetworkMode.AWS_VPC,
