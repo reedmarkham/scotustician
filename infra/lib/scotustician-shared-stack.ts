@@ -17,7 +17,20 @@ export class ScotusticianSharedStack extends cdk.Stack {
     });
 
     // --- VPC + Cluster ---
-    this.vpc = new ec2.Vpc(this, 'ScotusticianVpc', { maxAzs: 2 });
+    this.vpc = new ec2.Vpc(this, 'ScotusticianVpc', {
+      maxAzs: 2,
+      natGateways: 1,
+      subnetConfiguration: [
+        {
+          name: 'private',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        },
+      ],
+    });
+
+    this.vpc.addGatewayEndpoint('S3Endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
 
     this.cluster = new ecs.Cluster(this, 'ScotusticianCluster', {
       vpc: this.vpc,
