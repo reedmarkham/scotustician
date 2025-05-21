@@ -54,6 +54,27 @@ export class ScotusticianSharedStack extends cdk.Stack {
       },
     });
 
+    const asgArn = `arn:aws:autoscaling:${this.region}:${this.account}:autoScalingGroup:*:autoScalingGroupName/${asg.ref}`;
+
+    const cp = new ecs.CfnCapacityProvider(this, 'GpuCapacityProvider', {
+      name: 'GpuCapacityProvider',
+      autoScalingGroupProvider: {
+        autoScalingGroupArn: asgArn,
+        managedScaling: {
+          status: 'ENABLED',
+          targetCapacity: 100,
+          minimumScalingStepSize: 1,
+          maximumScalingStepSize: 1,
+          instanceWarmupPeriod: 60,
+        },
+        managedTerminationProtection: 'DISABLED',
+      },
+    });
+
+    // Attach capacity provider to the ECS cluster
+    const clusterResource = this.cluster.node.defaultChild as ecs.CfnCluster;
+    clusterResource.capacityProviders = [cp.name!];
+
     // 🛠 You can't use AsgCapacityProvider directly with L1 constructs
     // Instead, you can optionally output the Launch Template or ASG ID if needed
     new cdk.CfnOutput(this, 'LaunchTemplateId', { value: lt.ref });
