@@ -5,16 +5,34 @@ import boto3
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from opensearchpy import OpenSearch
+from transformers import AutoTokenizer
 
-s3 = boto3.client("s3")
+# Initialize logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Initialize S3 and tokenizer
+s3 = boto3.client("s3")
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+
 def get_transcript_s3(bucket: str, key: str) -> List[str]:
     logger.info(f"📥 Downloading transcript from s3://{bucket}/{key}")
-    obj = s3.get_object(Bucket=bucket, Key=key)
-    df = pd.read_json(obj['Body'], lines=True)
-    return df['text'].tolist()
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        df = pd.read_json(obj['Body'], lines=True)
+        return df['text'].dropna().tolist()
+    except Exception as e:
+        logger.error(f"❌ Failed to load {key} from S3: {e}")
+        raise
+
+def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
+    tokens = tokenizer.encode(text, add_special_tokens=False)
+    logger.info(f"🧮 Token count before truncation: {len(tokens)}")
+
+    truncated_tokens = tokens[:max_tokens]
+    logger.info(f"✂️ Token count after truncation: {len(truncated_tokens)}")
+
+    return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
 
 def generate_case_embedding(
     chunks: List[str],
@@ -23,15 +41,18 @@ def generate_case_embedding(
 ) -> Tuple[List[float], str]:
     logger.info(f"⚙️ Loading model: {model_name}")
     model = SentenceTransformer(model_name)
-    full_text = " ".join(chunks)[:2048]  # naive truncation
-    logger.info(f"🧠 Generating embedding for full oral argument text.")
-    embedding = model.encode([full_text], batch_size=batch_size, show_progress_bar=False)[0]
-    return embedding.tolist(), full_text
+
+    raw_text = " ".join(chunks)
+    truncated_text = truncate_to_tokens(raw_text, max_tokens=384)
+
+    logger.info(f"🧠 Generating embedding for truncated oral argument text.")
+    embedding = model.encode([truncated_text], batch_size=batch_size, show_progress_bar=False)[0]
+    return embedding.tolist(), truncated_text
 
 def extract_metadata_from_key(key: str) -> Dict[str, str]:
     filename = key.split("/")[-1].replace(".json", "")
     oa_id = filename + ".json"
-    
+
     if "_" in filename:
         term, case_name = filename.split("_", 1)
     else:
@@ -48,16 +69,16 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
 def ensure_index_exists(os_client: OpenSearch, index_name: str):
     if os_client.indices.exists(index=index_name):
         return
+
     logger.info(f"📚 Creating OpenSearch index '{index_name}'...")
     os_client.indices.create(index=index_name, body={
         "mappings": {
             "properties": {
                 "text": {"type": "text"},
                 "vector": {
-                "type": "dense_vector",
-                "dims": 384,
-                "index": True,
-                "similarity": "cosine"
+                    "type": "knn_vector",
+                    "dimension": 384,
+                    "similarity": "cosine"
                 },
                 "case_name": {"type": "keyword"},
                 "term": {"type": "keyword"},
@@ -67,6 +88,7 @@ def ensure_index_exists(os_client: OpenSearch, index_name: str):
             }
         }
     })
+    logger.info(f"✅ Index '{index_name}' created.")
 
 def index_case_embedding_to_opensearch(
     embedding: List[float],
@@ -76,6 +98,8 @@ def index_case_embedding_to_opensearch(
     index_name: str,
     os_client: OpenSearch
 ):
+    assert len(embedding) == 384, f"Embedding has invalid dimension: {len(embedding)}"
+
     doc = {
         "vector": embedding,
         "text": full_text,
