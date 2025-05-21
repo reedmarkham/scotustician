@@ -167,6 +167,12 @@ The ARN, access key, and secret key ID for a previously-created (i.e. via consol
 				"servicequotas:RequestServiceQuotaIncrease"
 			],
 			"Resource": "*"
+		},
+			{
+		"Sid": "AllowPassRoleForScotusticianTasks",
+		"Effect": "Allow",
+		"Action": "iam:PassRole",
+		"Resource": "arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDefExecutionRole2-*"
 		}
 	]
 }
