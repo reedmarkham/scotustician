@@ -2,6 +2,7 @@ import os
 
 from opensearchpy import OpenSearch
 from helpers import (
+    extract_speaker_list,
     get_transcript_s3,
     generate_case_embedding,
     extract_metadata_from_key,
@@ -22,11 +23,15 @@ os_client = OpenSearch(
 )
 
 def run(bucket: str, input_key: str):
-    chunks = get_transcript_s3(bucket, input_key)
+    xml_string = get_transcript_s3(bucket, input_key)
+    speaker_list = extract_speaker_list(xml_string)
     meta = extract_metadata_from_key(input_key)
-    embedding, full_text = generate_case_embedding(chunks, MODEL_NAME, BATCH_SIZE)
+    embedding, full_text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
     ensure_index_exists(os_client, INDEX_NAME)
-    index_case_embedding_to_opensearch(embedding, full_text, meta, input_key, INDEX_NAME, os_client)
+    index_case_embedding_to_opensearch(
+        embedding, full_text, meta, input_key, INDEX_NAME, os_client, speaker_list
+    )
+
 
 if __name__ == "__main__":
     INPUT_KEY = os.environ["INPUT_KEY"]

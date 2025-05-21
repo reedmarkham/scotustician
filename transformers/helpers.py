@@ -5,6 +5,7 @@ import io
 
 import boto3
 import pandas as pd
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from opensearchpy import OpenSearch
 from transformers import AutoTokenizer
@@ -16,6 +17,22 @@ logging.basicConfig(level=logging.INFO)
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+
+def extract_speaker_list(xml_string: str) -> List[Dict[str, str]]:
+    try:
+        root = ET.fromstring(xml_string)
+        speakers = {}
+
+        for el in root.findall("utterance"):
+            speaker_id = el.attrib.get("speaker_id")
+            speaker_name = el.attrib.get("speaker", "Unknown")
+            if speaker_id:
+                speakers[speaker_id] = speaker_name
+
+        return [{"id": sid, "name": speakers[sid]} for sid in sorted(speakers)]
+    except Exception as e:
+        logger.warning(f"⚠️ Could not extract speaker list from XML: {e}")
+        return []
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"📥 Downloading transcript from s3://{bucket}/{key}")
@@ -30,17 +47,31 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         for section in sections:
             for turn in section.get("turns", []):
                 speaker = turn.get("speaker", {}).get("name", "Unknown")
+                speaker_id = str(turn.get("speaker", {}).get("id", ""))
                 for block in turn.get("text_blocks", []):
                     text = block.get("text")
                     if text:
-                        utterance_el = ET.SubElement(transcript_root, "utterance", speaker=speaker)
+                        utterance_el = ET.SubElement(
+                            transcript_root,
+                            "utterance",
+                            speaker=speaker,
+                            speaker_id=speaker_id
+                        )
                         utterance_el.text = text
                         count += 1
 
         logger.info(f"🧾 Serialized {count} utterances to XML.")
         xml_str_io = io.StringIO()
         ET.ElementTree(transcript_root).write(xml_str_io, encoding="unicode")
-        return xml_str_io.getvalue()
+        xml_string = xml_str_io.getvalue()
+
+        # Persist to /xml/<oa_id>.xml
+        oa_id = key.split("/")[-1].replace(".json", "")
+        xml_key = f"xml/{oa_id}.xml"
+        s3.put_object(Bucket=bucket, Key=xml_key, Body=xml_string.encode("utf-8"))
+        logger.info(f"✅ Saved XML to s3://{bucket}/{xml_key}")
+
+        return xml_string
 
     except Exception as e:
         logger.error(f"❌ Failed to load {key} from S3: {e}")
@@ -56,19 +87,34 @@ def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
     return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
 
 def generate_case_embedding(
-    chunks: List[str],
+    xml_string: str,
     model_name: str,
     batch_size: int
 ) -> Tuple[List[float], str]:
     logger.info(f"⚙️ Loading model: {model_name}")
     model = SentenceTransformer(model_name)
 
-    raw_text = " ".join(chunks)
-    truncated_text = truncate_to_tokens(raw_text, max_tokens=384)
+    try:
+        root = ET.fromstring(xml_string)
+        turns = [
+            f"{el.attrib.get('speaker', 'Unknown')}: {el.text.strip()}"
+            for el in root.findall("utterance")
+            if el.text and len(el.text.strip().split()) > 3
+        ]
 
-    logger.info(f"🧠 Generating embedding for truncated oral argument text.")
-    embedding = model.encode([truncated_text], batch_size=batch_size, show_progress_bar=False)[0]
-    return embedding.tolist(), truncated_text
+        if not turns:
+            raise ValueError("No valid utterances found to embed.")
+
+        logger.info(f"🧠 Generating embeddings for {len(turns)} speaker turns.")
+        embeddings = model.encode(turns, batch_size=batch_size, show_progress_bar=True)
+        avg_embedding = np.mean(embeddings, axis=0).tolist()
+        full_text = "\n".join(turns)
+
+        return avg_embedding, full_text
+
+    except Exception as e:
+        logger.error(f"❌ Failed to generate embedding from XML: {e}")
+        raise
 
 def extract_metadata_from_key(key: str) -> Dict[str, str]:
     filename = key.split("/")[-1].replace(".json", "")
@@ -105,7 +151,15 @@ def ensure_index_exists(os_client: OpenSearch, index_name: str):
                 "term": {"type": "keyword"},
                 "case_id": {"type": "keyword"},
                 "oa_id": {"type": "keyword"},
-                "source_key": {"type": "keyword"}
+                "source_key": {"type": "keyword"},
+                "xml_uri": {"type": "keyword"},
+                "speaker_list": {
+                    "type": "nested",
+                    "properties": {
+                        "id": {"type": "keyword"},
+                        "name": {"type": "keyword"}
+                    }
+                }
             }
         }
     })
@@ -117,9 +171,14 @@ def index_case_embedding_to_opensearch(
     meta: Dict[str, str],
     source_key: str,
     index_name: str,
-    os_client: OpenSearch
+    os_client: OpenSearch,
+    speaker_list: List[Dict[str, str]]
 ):
     assert len(embedding) == 384, f"Embedding has invalid dimension: {len(embedding)}"
+
+    bucket_name = "scotustician"
+    xml_key = f"xml/{meta['oa_id'].replace('.json', '')}.xml"
+    xml_uri = f"s3://{bucket_name}/{xml_key}"
 
     doc = {
         "vector": embedding,
@@ -128,7 +187,9 @@ def index_case_embedding_to_opensearch(
         "case_name": meta["case_name"],
         "case_id": meta["case_id"],
         "oa_id": meta["oa_id"],
-        "source_key": source_key
+        "source_key": source_key,
+        "xml_uri": xml_uri,
+        "speaker_list": speaker_list
     }
 
     logger.info(f"📝 Indexing OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")

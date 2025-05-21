@@ -3,6 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from helpers import (
+    extract_speaker_list,
     get_transcript_s3,
     generate_case_embedding,
     extract_metadata_from_key,
@@ -48,13 +49,17 @@ def list_s3_keys(bucket: str, prefix: str):
 
 def process_key(key: str):
     try:
-        chunks = get_transcript_s3(BUCKET, key)
-        embedding, text = generate_case_embedding(chunks, MODEL_NAME, BATCH_SIZE)
+        xml_string = get_transcript_s3(BUCKET, key)
+        speaker_list = extract_speaker_list(xml_string)
         meta = extract_metadata_from_key(key)
-        index_case_embedding_to_opensearch(embedding, text, meta, key, INDEX_NAME, os_client)
+        embedding, text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
+        index_case_embedding_to_opensearch(
+            embedding, text, meta, key, INDEX_NAME, os_client, speaker_list
+        )
         return f"✅ Processed: {key}"
     except Exception as e:
         return f"❌ Failed: {key} | {e}"
+
 
 def main():
     logger.info(f"🔍 Scanning s3://{BUCKET}/{PREFIX}")
