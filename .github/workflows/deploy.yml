@@ -12,7 +12,7 @@ jobs:
     outputs:
       deploy_shared: ${{ steps.filter.outputs.shared }}
       deploy_ingest: ${{ steps.filter.outputs.ingest }}
-      deploy_transformers: ${{ steps.filter.outputs.deploy_transformers }}
+      deploy_transformers: ${{ steps.filter.outputs.transformers }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -51,7 +51,7 @@ jobs:
 
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
+      ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -112,14 +112,33 @@ jobs:
             echo "✅ cdk.json app configuration is correct."
           fi
 
-      - name: Check GPU quota (only for transformers or shared)
+      - name: Check GPU quota to determine deployment context for transformers and shared stacks
         if: matrix.stack == 'shared' || matrix.stack == 'transformers'
         id: gpu_check
         run: |
-          QUOTA=$(aws service-quotas get-service-quota             --service-code ec2             --quota-code L-417A2B38             --region $AWS_REGION             --query 'Quota.Value' --output text)
-          echo "gpu_quota=$QUOTA" >> $GITHUB_OUTPUT
+          echo "gpu_quota=0" >> $GITHUB_OUTPUT
+          echo "Checking GPU quota (L-417A2B38)..."
+          set +e
+          output=$(aws service-quotas get-service-quota \
+            --service-code ec2 \
+            --quota-code L-417A2B38 \
+            --region $AWS_REGION \
+            --query 'Quota.Value' \
+            --output text 2>&1)
+          STATUS=$?
+          set -e
 
-      - name: Deploy ${{ matrix.stack_name }}
+          if [[ $STATUS -ne 0 ]]; then
+            echo "⚠️ Quota check failed. Defaulting to no GPU available."
+            echo "$output"
+          elif [[ "$output" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "✅ GPU quota: $output"
+            echo "gpu_quota=$output" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Unexpected output format. Quota not set."
+          fi
+
+      - name: Deploy ${{ matrix.stack_name }} conditioned on above checks
         run: |
           cd infra
           if [[ "${{ matrix.stack }}" == "shared" || "${{ matrix.stack }}" == "transformers" ]]; then
@@ -134,9 +153,36 @@ jobs:
             CONTEXT=""
           fi
 
-          npx cdk deploy             --toolkit-stack-name $TOOLKIT_STACK             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER             $CONTEXT             ${{ matrix.stack_name }}             --outputs-file cdk-outputs-${{ matrix.stack }}.json             --require-approval never
+          npx cdk deploy \
+            --toolkit-stack-name $TOOLKIT_STACK \
+            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+            $CONTEXT \
+            ${{ matrix.stack_name }} \
+            --outputs-file cdk-outputs-${{ matrix.stack }}.json \
+            --require-approval never
 
-      - name: Upload CDK Outputs
+      - name: Parse CDK outputs and print to GitHub Actions
+        if: matrix.stack == 'transformers'
+        id: parse_outputs
+        run: |
+          cd infra
+          GPU_TASK=$(jq -r '.TransformersGpuTaskDefinitionArn' cdk-outputs-transformers.json)
+          GPU_CONTAINER=$(jq -r '.TransformersGpuContainerName' cdk-outputs-transformers.json)
+          CPU_TASK=$(jq -r '.TransformersCpuTaskDefinitionArn' cdk-outputs-transformers.json)
+          CPU_CONTAINER=$(jq -r '.TransformersCpuContainerName' cdk-outputs-transformers.json)
+          CLUSTER=$(jq -r '.ClusterName' cdk-outputs-shared.json)
+          SUBNET=$(jq -r '.PrivateSubnetId' cdk-outputs-shared.json)
+          SG=$(jq -r '.SecurityGroupId' cdk-outputs-shared.json)
+
+          echo "gpu_task=$GPU_TASK" >> $GITHUB_OUTPUT
+          echo "gpu_container=$GPU_CONTAINER" >> $GITHUB_OUTPUT
+          echo "cpu_task=$CPU_TASK" >> $GITHUB_OUTPUT
+          echo "cpu_container=$CPU_CONTAINER" >> $GITHUB_OUTPUT
+          echo "cluster=$CLUSTER" >> $GITHUB_OUTPUT
+          echo "subnet=$SUBNET" >> $GITHUB_OUTPUT
+          echo "sg=$SG" >> $GITHUB_OUTPUT
+
+      - name: Upload CDK outputs
         uses: actions/upload-artifact@v4
         with:
           name: cdk-outputs-${{ matrix.stack }}
