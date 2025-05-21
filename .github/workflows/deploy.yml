@@ -204,6 +204,8 @@ jobs:
 
           npx cdk deploy ScotusticianTransformersStack \
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+            --context opensearchHost=${{ secrets.OPENSEARCH_HOST }} \
+            --context opensearchPass=${{ secrets.OPENSEARCH_PASS }} \
             --toolkit-stack-name $TOOLKIT_STACK \
             $CONTEXT \
             --outputs-file cdk-outputs-transformers.json \

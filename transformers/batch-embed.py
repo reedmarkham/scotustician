@@ -15,7 +15,7 @@ from opensearchpy import OpenSearch
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
-INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
+INDEX_NAME = os.getenv("INDEX_NAME", "oa-embeddings")
 MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
@@ -24,9 +24,18 @@ s3 = boto3.client("s3")
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Validate OpenSearch env vars
+OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST")
+OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS")
+
+if not OPENSEARCH_HOST or not OPENSEARCH_PASS:
+    raise EnvironmentError("Missing OPENSEARCH_HOST or OPENSEARCH_PASS")
+
+logger.info(f"🔐 Connecting to OpenSearch at {OPENSEARCH_HOST}")
+
 os_client = OpenSearch(
-    hosts=[{'host': os.getenv("OPENSEARCH_HOST", "localhost"), 'port': 443}],
-    http_auth=('admin', os.getenv("OPENSEARCH_PASS", "")),
+    hosts=[{'host': OPENSEARCH_HOST, 'port': 443}],
+    http_auth=('admin', OPENSEARCH_PASS),
     use_ssl=True,
     verify_certs=True
 )

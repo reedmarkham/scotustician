@@ -181,6 +181,8 @@ The ARN, access key, and secret key ID for a previously-created (i.e. via consol
 }
 ```
 
+Once the OpenSearch database is deployed i.e. via `scotustician-db`, edit its security configuration such that it has an 'admin' user and password to be passed via a GitHub repository secret. (To-do: expand on this with screenshots)
+
 Ensure the following secrets are configured in your GitHub repo at **Settings > Secrets and variables > Actions > repository secrets**:
 | Secret Name         | Description                       | Example Value         |
 |---------------------|-----------------------------------|----------------------|
@@ -189,6 +191,8 @@ Ensure the following secrets are configured in your GitHub repo at **Settings > 
 | `AWS_IAM_ARN`        | AWS IAM user's ARN | `arn:aws:iam%`          |
 | `AWS_ACCESS_KEY`        | AWS IAM user's access key | `%`          |
 | `AWS_SECRET_KEY_ID`        | AWS IAM user's secret key| `%`          |
+| `OPENSEARCH_HOST`        | AWS' URL to your OpenSearch db | `%`          |
+| `OPENSEARCH_PASS`        | The password you configure to the admin user of the OpenSearch db | `%`          |
 
 **Bootstrap the environment outside of CI/CD**
 

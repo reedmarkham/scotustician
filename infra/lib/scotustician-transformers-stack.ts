@@ -22,9 +22,12 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
+    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com';
+    const opensearchPass = this.node.tryGetContext('opensearchPass') || 'PLACEHOLDER_SECRET_SHOULD_BE_OVERRIDDEN';
+
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
-      directory: '../transformers',
-    });
+          directory: '../transformers',
+        });
 
     let taskDefinition: ecs.TaskDefinition;
     let container: ecs.ContainerDefinition;
@@ -42,9 +45,14 @@ export class ScotusticianTransformersStack extends Stack {
         gpuCount: 1,
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
+          OPENSEARCH_HOST: opensearchHost,
+          OPENSEARCH_PASS: opensearchPass,
           S3_BUCKET: 'scotustician',
-          MAX_WORKERS: '1',
+          RAW_PREFIX: 'raw/',
+          INDEX_NAME: 'oa-embeddings',
+          MODEL_NAME: 'all-MiniLM-L6-v2',
+          BATCH_SIZE: '16',
+          MAX_WORKERS: '1'
         },
         command: ['python', 'batch-embed.py'],
       });
@@ -59,9 +67,14 @@ export class ScotusticianTransformersStack extends Stack {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
+          OPENSEARCH_HOST: opensearchHost,
+          OPENSEARCH_PASS: opensearchPass,
           S3_BUCKET: 'scotustician',
-          MAX_WORKERS: '2',
+          RAW_PREFIX: 'raw/',
+          INDEX_NAME: 'oa-embeddings',
+          MODEL_NAME: 'all-MiniLM-L6-v2',
+          BATCH_SIZE: '16',
+          MAX_WORKERS: '2'
         },
         command: ['python', 'batch-embed.py'],
       });
