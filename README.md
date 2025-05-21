@@ -25,10 +25,11 @@ scotustician/
 ## Design
 
 **Infrastructure:**
-- AWS CDK (TypeScript) to provision clusters, networking, and ECS tasks below using Docker images
-- ECS Fargate task for `ingest` (parallelized ingestion of JSON data from Oyez.org API to S3 using Python)
-- ECS EC2 task w/ GPU for `transformers`
-- GitHub Actions CI/CD
+- AWS CDK (TypeScript) provisions clusters, networking, and ECS tasks using Docker images.
+- ECS Fargate task for `ingest` (parallelized ingestion of JSON data from Oyez.org API to S3 using Python).
+- ECS EC2 task with GPU support for `transformers`—conditionally deployed if GPU resources are available in the AWS account.
+- Shared infrastructure (e.g., EC2 instance, security groups) for GPU tasks is also conditionally deployed.
+- GitHub Actions CI/CD.
 
 **Data Flow:**
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
@@ -155,6 +156,17 @@ The ARN, access key, and secret key ID for a previously-created (i.e. via consol
 				"servicediscovery:*"
 			],
 			"Resource": "*"
+		},
+		{
+			"Sid": "ServiceQuotasAccess",
+			"Effect": "Allow",
+			"Action": [
+				"servicequotas:GetServiceQuota",
+				"servicequotas:ListServiceQuotas",
+				"servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota",
+				"servicequotas:RequestServiceQuotaIncrease"
+			],
+			"Resource": "*"
 		}
 	]
 }
@@ -190,6 +202,12 @@ Then update the `infra/cdk.json` accordingly:
 ```
 
 **Request vCPU quota increase for GPU-type instances on your AWS account**
+
+When deploying via GitHub Actions, the presence of GPU compute capacity (e.g., vCPU quota for `p2`, `p3`, `p4`, or `g4dn` instance families) is checked. If no GPU capacity is available, the EC2 instance and GPU-based `transformers` task definition are **skipped**, and only CPU-based fallback infrastructure is provisioned.
+
+To enable GPU support:
+- Submit a vCPU quota increase request (see below).
+- The CI/CD pipeline will include GPU resources only if quotas are available.
 
 AWS requires explicit quota requests especially for things like GPU or large EC2 instances:
 ```
