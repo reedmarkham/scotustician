@@ -1,10 +1,4 @@
-import {
-  Stack,
-  StackProps,
-  DefaultStackSynthesizer,
-  CfnOutput,
-  RemovalPolicy,
-} from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -21,6 +15,7 @@ export interface ScotusticianTransformersStackProps extends StackProps {
 export class ScotusticianTransformersStack extends Stack {
   constructor(scope: Construct, id: string, props: ScotusticianTransformersStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const useGpu = scope.node.tryGetContext('useGpu') === 'true';
 
     super(scope, id, {
       ...props,
@@ -31,89 +26,75 @@ export class ScotusticianTransformersStack extends Stack {
       directory: '../transformers',
     });
 
-    // --- GPU Task Definition ---
-    const gpuTaskDefinition = new ecs.Ec2TaskDefinition(this, 'TransformersGpuTaskDef', {
-      networkMode: ecs.NetworkMode.AWS_VPC,
-    });
+    let taskDefinition: ecs.TaskDefinition;
+    let container: ecs.ContainerDefinition;
 
-    const gpuContainer = gpuTaskDefinition.addContainer('TransformersGpuContainer', {
-      image: ecs.ContainerImage.fromDockerImageAsset(image),
-      memoryLimitMiB: 6144,
-      cpu: 512,
-      gpuCount: 1,
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
-      environment: {
-        OPENSEARCH_HOST: process.env.OPENSEARCH_HOST ?? 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
-        S3_BUCKET: 'scotustician',
-        MAX_WORKERS: '1',
-      },
-      command: ['python', 'batch_embed.py'],
-    });
+    if (useGpu) {
+      taskDefinition = new ecs.Ec2TaskDefinition(this, 'TransformersGpuTaskDef', {
+        networkMode: ecs.NetworkMode.AWS_VPC,
+      });
 
-    gpuContainer.addUlimits({
+      container = taskDefinition.addContainer('TransformersGpuContainer', {
+        image: ecs.ContainerImage.fromDockerImageAsset(image),
+        memoryLimitMiB: 6144,
+        cpu: 512,
+        gpuCount: 1,
+        logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
+        environment: {
+          OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
+          S3_BUCKET: 'scotustician',
+          MAX_WORKERS: '1',
+        },
+        command: ['python', 'batch_embed.py'],
+      });
+    } else {
+      const fargateTask = new ecs.FargateTaskDefinition(this, 'TransformersCpuTaskDef', {
+        cpu: 4096,
+        memoryLimitMiB: 8192,
+      });
+      taskDefinition = fargateTask;
+
+      container = fargateTask.addContainer('TransformersCpuContainer', {
+        image: ecs.ContainerImage.fromDockerImageAsset(image),
+        logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
+        environment: {
+          OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
+          S3_BUCKET: 'scotustician',
+          MAX_WORKERS: '1',
+        },
+        command: ['python', 'batch_embed.py'],
+      });
+    }
+
+    container.addUlimits({
       name: ecs.UlimitName.NOFILE,
       softLimit: 65536,
       hardLimit: 65536,
     });
 
-    // --- CPU Task Definition (Fargate-compatible) ---
-    const cpuTaskDefinition = new ecs.FargateTaskDefinition(this, 'TransformersCpuTaskDef', {
-      cpu: 4096, // 4 vCPU
-      memoryLimitMiB: 8192, // 8 GB
+    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['es:ESHttpPost', 'es:ESHttpPut', 'es:ESHttpGet', 'es:ESHttpHead'],
+      resources: [`arn:aws:es:us-east-1:${this.account}:domain/scotusticianope-x0u0hjgyswq0/*`],
+    }));
+
+    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject', 's3:ListBucket', 's3:PutObject'],
+      resources: ['arn:aws:s3:::scotustician', 'arn:aws:s3:::scotustician/*'],
+    }));
+
+    taskDefinition.addToExecutionRolePolicy(new iam.PolicyStatement({
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: ['*'],
+    }));
+
+    new CfnOutput(this, useGpu ? 'TransformersGpuTaskDefinitionArn' : 'TransformersCpuTaskDefinitionArn', {
+      value: taskDefinition.taskDefinitionArn,
     });
 
-    const cpuContainer = cpuTaskDefinition.addContainer('TransformersCpuContainer', {
-      image: ecs.ContainerImage.fromDockerImageAsset(image),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
-      environment: {
-        OPENSEARCH_HOST: process.env.OPENSEARCH_HOST ?? 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
-        S3_BUCKET: 'scotustician',
-        MAX_WORKERS: '1',
-      },
-      command: ['python', 'batch_embed.py'],
+    new CfnOutput(this, useGpu ? 'TransformersGpuContainerName' : 'TransformersCpuContainerName', {
+      value: container.containerName,
     });
 
-    // --- Permissions ---
-    const s3AndESPermissions = new iam.PolicyStatement({
-      actions: [
-        'es:ESHttpPost', 'es:ESHttpPut', 'es:ESHttpGet', 'es:ESHttpHead',
-        's3:GetObject', 's3:ListBucket', 's3:PutObject',
-      ],
-      resources: [
-        `arn:aws:es:us-east-1:${this.account}:domain/scotusticianope-x0u0hjgyswq0/*`,
-        'arn:aws:s3:::scotustician',
-        'arn:aws:s3:::scotustician/*',
-      ],
-    });
-
-    gpuTaskDefinition.taskRole.addToPrincipalPolicy(s3AndESPermissions);
-    cpuTaskDefinition.taskRole.addToPrincipalPolicy(s3AndESPermissions);
-
-    [gpuTaskDefinition, cpuTaskDefinition].forEach(task => {
-      task.addToExecutionRolePolicy(new iam.PolicyStatement({
-        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
-        resources: ['*'],
-      }));
-    });
-
-    // --- Outputs ---
-    new CfnOutput(this, 'TransformersGpuTaskDefinitionArn', {
-      value: gpuTaskDefinition.taskDefinitionArn,
-    });
-
-    new CfnOutput(this, 'TransformersGpuContainerName', {
-      value: gpuContainer.containerName,
-    });
-
-    new CfnOutput(this, 'TransformersCpuTaskDefinitionArn', {
-      value: cpuTaskDefinition.taskDefinitionArn,
-    });
-
-    new CfnOutput(this, 'TransformersCpuContainerName', {
-      value: cpuContainer.containerName,
-    });
-
-    // --- Logs and Alarms ---
     const logGroup = new logs.LogGroup(this, 'TransformersLogGroup', {
       logGroupName: '/ecs/transformers',
       removalPolicy: RemovalPolicy.DESTROY,

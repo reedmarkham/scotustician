@@ -12,7 +12,7 @@ jobs:
     outputs:
       deploy_shared: ${{ steps.filter.outputs.shared }}
       deploy_ingest: ${{ steps.filter.outputs.ingest }}
-      deploy_transformers: ${{ steps.filter.outputs.transformers }}
+      deploy_transformers: ${{ steps.filter.outputs.deploy_transformers }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -51,7 +51,7 @@ jobs:
 
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -88,11 +88,7 @@ jobs:
 
       - name: Validate CDK Bootstrap Qualifier
         run: |
-          ACTUAL_QUALIFIER=$(aws cloudformation describe-stacks \
-            --stack-name $TOOLKIT_STACK \
-            --region $AWS_REGION \
-            --query "Stacks[0].Parameters[?ParameterKey=='Qualifier'].ParameterValue" \
-            --output text)
+          ACTUAL_QUALIFIER=$(aws cloudformation describe-stacks             --stack-name $TOOLKIT_STACK             --region $AWS_REGION             --query "Stacks[0].Parameters[?ParameterKey=='Qualifier'].ParameterValue"             --output text)
 
           echo "✅ Found bootstrap qualifier: $ACTUAL_QUALIFIER"
 
@@ -116,15 +112,29 @@ jobs:
             echo "✅ cdk.json app configuration is correct."
           fi
 
+      - name: Check GPU quota (only for transformers or shared)
+        if: matrix.stack == 'shared' || matrix.stack == 'transformers'
+        id: gpu_check
+        run: |
+          QUOTA=$(aws service-quotas get-service-quota             --service-code ec2             --quota-code L-417A2B38             --region $AWS_REGION             --query 'Quota.Value' --output text)
+          echo "gpu_quota=$QUOTA" >> $GITHUB_OUTPUT
+
       - name: Deploy ${{ matrix.stack_name }}
         run: |
           cd infra
-          npx cdk deploy \
-            --toolkit-stack-name $TOOLKIT_STACK \
-            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
-            ${{ matrix.stack_name }} \
-            --outputs-file cdk-outputs-${{ matrix.stack }}.json \
-            --require-approval never
+          if [[ "${{ matrix.stack }}" == "shared" || "${{ matrix.stack }}" == "transformers" ]]; then
+            if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
+              CONTEXT="--context useGpu=true"
+              echo "Deploying ${matrix.stack} with GPU context"
+            else
+              CONTEXT="--context useGpu=false"
+              echo "Deploying ${matrix.stack} with CPU fallback context"
+            fi
+          else
+            CONTEXT=""
+          fi
+
+          npx cdk deploy             --toolkit-stack-name $TOOLKIT_STACK             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER             $CONTEXT             ${{ matrix.stack_name }}             --outputs-file cdk-outputs-${{ matrix.stack }}.json             --require-approval never
 
       - name: Upload CDK Outputs
         uses: actions/upload-artifact@v4
