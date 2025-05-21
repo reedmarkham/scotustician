@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . .
 
-CMD ["python", "batch_embed.py"]
+CMD ["python", "batch-embed.py"]
