@@ -22,8 +22,8 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com';
-    const opensearchPass = this.node.tryGetContext('opensearchPass') || 'PLACEHOLDER_SECRET_SHOULD_BE_OVERRIDDEN';
+    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'search-scotusticianope-x0u0hjgyswq0-vwz6jxhrrfq2447s3comzf7wna.us-east-1.es.amazonaws.com';
+    const opensearchPass = this.node.tryGetContext('opensearchPass') || 'REPOSITORY_SECRET';
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
           directory: '../transformers',
