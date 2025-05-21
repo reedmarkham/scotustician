@@ -59,11 +59,33 @@ jobs:
 
       - run: cd infra && npm ci
 
-      - run: |
+      - name: Check GPU quota
+        id: gpu_check
+        run: |
+          echo "gpu_quota=0" >> $GITHUB_OUTPUT
+          output=$(aws service-quotas get-service-quota \
+            --service-code ec2 \
+            --quota-code L-417A2B38 \
+            --query 'Quota.Value' --output text 2>&1) || true
+          if [[ "$output" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "gpu_quota=$output" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy shared stack
+        run: |
           cd infra
+          if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
+            CONTEXT="--context useGpu=true"
+            echo "Deploying with GPU context"
+          else
+            CONTEXT="--context useGpu=false"
+            echo "Deploying with CPU fallback context"
+          fi
+
           npx cdk deploy ScotusticianSharedStack \
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
             --toolkit-stack-name $TOOLKIT_STACK \
+            $CONTEXT \
             --outputs-file cdk-outputs-shared.json \
             --require-approval never
 
