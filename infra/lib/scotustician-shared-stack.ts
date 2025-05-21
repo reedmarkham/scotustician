@@ -52,7 +52,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
     const lt = new ec2.CfnLaunchTemplate(this, 'GpuLaunchTemplate', {
       launchTemplateName: 'ScotusticianGpuTemplate',
       launchTemplateData: {
-        instanceType: 'g4dn.xlarge',
+        instanceType: 'g4dn.micro',
         imageId: gpuAmi.getImage(this).imageId,
       },
     });

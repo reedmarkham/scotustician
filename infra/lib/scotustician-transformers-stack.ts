@@ -32,13 +32,13 @@ export class ScotusticianTransformersStack extends Stack {
     const container = taskDefinition.addContainer('TransformersContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
       memoryLimitMiB: 8192,
-      cpu: 1024,
+      cpu: 512,
       gpuCount: 1,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
       environment: {
         OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
         S3_BUCKET: 'scotustician',
-        MAX_WORKERS: '4',
+        MAX_WORKERS: '1',
       },
       command: ['python', 'batch_embed.py'],
     });
