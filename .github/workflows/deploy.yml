@@ -98,7 +98,7 @@ jobs:
           path: infra/cdk-outputs-shared.json
 
   deploy_ingest:
-    needs: [plan, deploy_shared]
+    needs: plan
     if: needs.plan.outputs.deploy_ingest == 'true'
     runs-on: ubuntu-latest
     env:
@@ -124,6 +124,13 @@ jobs:
 
       - run: cd infra && npm ci
 
+      - name: Download shared outputs if available
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: cdk-outputs-shared
+          path: infra
+
       - run: |
           cd infra
           npx cdk deploy ScotusticianIngestStack \
@@ -139,7 +146,7 @@ jobs:
           path: infra/cdk-outputs-ingest.json
 
   deploy_transformers:
-    needs: [plan, deploy_shared]
+    needs: plan
     if: needs.plan.outputs.deploy_transformers == 'true'
     runs-on: ubuntu-latest
     env:
@@ -165,7 +172,8 @@ jobs:
 
       - run: cd infra && npm ci
 
-      - name: Download shared outputs
+      - name: Download shared outputs if available
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
@@ -206,3 +214,4 @@ jobs:
         with:
           name: cdk-outputs-transformers
           path: infra/cdk-outputs-transformers.json
+
