@@ -93,6 +93,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
     // Attach capacity provider to the ECS cluster
     const clusterResource = this.cluster.node.defaultChild as ecs.CfnCluster;
     clusterResource.capacityProviders = [cp.name!];
+    clusterResource.addDependency(cp);
 
     // 🛠 You can't use AsgCapacityProvider directly with L1 constructs
     // Instead, you can optionally output the Launch Template or ASG ID if needed
