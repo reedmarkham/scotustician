@@ -189,7 +189,7 @@ Then update the `infra/cdk.json` accordingly:
 }
 ```
 
-**Request vCPU quota increase for your AWS account**
+**Request vCPU quota increase for GPU-type instances on your AWS account**
 
 AWS requires explicit quota requests especially for things like GPU or large EC2 instances:
 ```
@@ -209,15 +209,25 @@ Submit
 
 **Run the tasks in an ad-hoc script**
 
-Review the stack output for subnet and cluster names, and then:
-```
+You can manually trigger ECS tasks using the AWS CLI.
+
+First, **review the CDK stack outputs** for the following values:
+- `ClusterName`
+- `PublicSubnetId1` or `PrivateSubnetId`
+- `SecurityGroupId`
+- Task Definition ARNs for each service
+
+---
+
+### 🔹 1. Fargate Ingest Task (CPU)
+
+```bash
 #!/bin/bash
 
-# === Fargate Ingest Task ===
 CLUSTER_NAME="ScotusticianCluster"
-TASK_DEF="ScotusticianIngestStack-IngestTaskDefXXXXXXXX"  # Replace with actual ARN or family name
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                      # Private subnet with NAT access
-SG_ID="sg-xxxxxxxxxxxxxxxxx"                              # SG allowing outbound HTTPS
+TASK_DEF="ScotusticianIngestStack-IngestTaskDefXXXXXXXX"  # Replace with actual ARN
+SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                      # Public or NAT-enabled private subnet
+SG_ID="sg-xxxxxxxxxxxxxxxxx"                              # Must allow HTTPS egress
 REGION="us-east-1"
 
 aws ecs run-task \
@@ -229,23 +239,61 @@ aws ecs run-task \
   --region "$REGION"
 ```
 
-```
+---
+
+### 🔹 2. EC2 Transformers Task (GPU-accelerated)
+
+```bash
 #!/bin/bash
 
-# === EC2 Transformers Task (GPU) ===
 CLUSTER_NAME="ScotusticianCluster"
-TASK_DEF="ScotusticianTransformersStack-TransformersTaskDefXXXXXXXX"  # Replace with actual ARN or family
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                                  # Private subnet for EC2 instance
-SG_ID="sg-xxxxxxxxxxxxxxxxx"                                          # SG allowing outbound traffic
+TASK_DEF="ScotusticianTransformersStack-TransformersGpuTaskDefXXXXXXXX"  # Replace with actual ARN
+SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                                     # Private subnet for EC2
+SG_ID="sg-xxxxxxxxxxxxxxxxx"
 REGION="us-east-1"
-CAPACITY_PROVIDER="GpuCapacityProvider"
 
 aws ecs run-task \
   --cluster "$CLUSTER_NAME" \
   --launch-type EC2 \
   --task-definition "$TASK_DEF" \
   --count 1 \
-  --capacity-provider-strategy "capacityProvider=$CAPACITY_PROVIDER,weight=1" \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
+  --region "$REGION"
+```
+
+#### ⚠️ GPU Instance Note
+
+The GPU instance used to run this task is provisioned as a **Spot EC2 instance** and is tagged with `AutoStop=true`.
+
+- It will be **automatically stopped at 7 PM ET** each day by a scheduled Lambda rule.
+- To run a GPU task after that time, **manually start the instance**:
+
+```bash
+aws ec2 start-instances --instance-ids i-xxxxxxxxxxxxxxxxx --region us-east-1
+```
+
+---
+
+### 🔹 3. Fargate Transformers Task (CPU fallback)
+
+Use this option if:
+- The GPU instance is unavailable or stopped
+- You want to run the model on CPU using 4 vCPU and 8 GB memory
+
+```bash
+#!/bin/bash
+
+CLUSTER_NAME="ScotusticianCluster"
+TASK_DEF="ScotusticianTransformersStack-TransformersCpuTaskDefXXXXXXXX"  # Replace with actual ARN
+SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                                     # Public or private subnet with NAT
+SG_ID="sg-xxxxxxxxxxxxxxxxx"
+REGION="us-east-1"
+
+aws ecs run-task \
+  --cluster "$CLUSTER_NAME" \
+  --launch-type FARGATE \
+  --task-definition "$TASK_DEF" \
+  --count 1 \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
   --region "$REGION"
 ```
