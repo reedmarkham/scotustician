@@ -27,7 +27,6 @@ export class ScotusticianIngestStack extends Stack {
       directory: '../ingest',
     });
 
-    // No need for GPU support in the ingest container
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
       cpu: 1024,
       memoryLimitMiB: 4096,
