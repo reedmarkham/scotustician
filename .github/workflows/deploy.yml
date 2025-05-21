@@ -24,6 +24,7 @@ jobs:
           filters: |
             shared:
               - 'infra/**'
+              - '.github/workflows/**'
             ingest:
               - 'infra/**'
               - 'ingest/**'
