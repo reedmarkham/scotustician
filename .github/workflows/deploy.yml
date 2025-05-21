@@ -26,10 +26,12 @@ jobs:
               - 'infra/**'
               - '.github/workflows/**'
             ingest:
+              - 'ingest/*'
               - 'infra/**'
               - 'ingest/**/*'
             transformers:
               - 'infra/**'
+              - 'transformers/*'
               - 'transformers/**/*'
 
   deploy_shared:
