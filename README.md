@@ -327,7 +327,7 @@ aws ecs run-task \
 
 ## CI/CD
 
-On commits or pull requests to `main` the GitHub Actions workflow (`.github/workflows/deploy.yml`) detects changes in `ingest/` or `transformers/`, builds respective Docker images, and deploys via `cdk deploy`.
+On commits or pull requests to `main` the GitHub Actions workflow (`.github/workflows/deploy.yml`) detects pertinent diffs, builds respective Docker images, and deploys via `cdk deploy`.
 
 ---
 
