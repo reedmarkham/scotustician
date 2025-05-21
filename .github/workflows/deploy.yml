@@ -145,10 +145,10 @@ jobs:
           if [[ "${{ matrix.stack }}" == "shared" || "${{ matrix.stack }}" == "transformers" ]]; then
             if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
               CONTEXT="--context useGpu=true"
-              echo "Deploying ${matrix.stack} with GPU context"
+              echo "Deploying ${{matrix.stack}} with GPU context"
             else
               CONTEXT="--context useGpu=false"
-              echo "Deploying ${matrix.stack} with CPU fallback context"
+              echo "Deploying ${{matrix.stack}} with CPU fallback context"
             fi
           else
             CONTEXT=""
