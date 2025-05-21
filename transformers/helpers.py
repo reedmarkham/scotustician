@@ -1,5 +1,7 @@
 import logging
 from typing import List, Tuple, Dict
+import xml.etree.ElementTree as ET
+import io
 
 import boto3
 import pandas as pd
@@ -15,12 +17,31 @@ logging.basicConfig(level=logging.INFO)
 s3 = boto3.client("s3")
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
 
-def get_transcript_s3(bucket: str, key: str) -> List[str]:
+def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"📥 Downloading transcript from s3://{bucket}/{key}")
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
-        df = pd.read_json(obj['Body'], lines=True)
-        return df['text'].dropna().tolist()
+        data = pd.read_json(obj['Body'])
+
+        sections = data["transcript"]["sections"]
+        transcript_root = ET.Element("transcript")
+
+        count = 0
+        for section in sections:
+            for turn in section.get("turns", []):
+                speaker = turn.get("speaker", {}).get("name", "Unknown")
+                for block in turn.get("text_blocks", []):
+                    text = block.get("text")
+                    if text:
+                        utterance_el = ET.SubElement(transcript_root, "utterance", speaker=speaker)
+                        utterance_el.text = text
+                        count += 1
+
+        logger.info(f"🧾 Serialized {count} utterances to XML.")
+        xml_str_io = io.StringIO()
+        ET.ElementTree(transcript_root).write(xml_str_io, encoding="unicode")
+        return xml_str_io.getvalue()
+
     except Exception as e:
         logger.error(f"❌ Failed to load {key} from S3: {e}")
         raise
