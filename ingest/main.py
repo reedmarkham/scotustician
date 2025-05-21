@@ -57,8 +57,11 @@ def request(url: str) -> Optional[dict]:
         raise Exception(f"Failed to retrieve {url}")
     return result
 
-def get_cases_by_term(term: int) -> Optional[list]:
-    return request(OYEZ_CASES_TERM_PREFIX + str(term))
+def get_cases_by_term(term: int) -> list:
+    response = request(OYEZ_CASES_TERM_PREFIX + str(term))
+    if not isinstance(response, list):
+        raise ValueError(f"Expected list of cases, got {type(response)}")
+    return response
 
 def get_case_full(term: int, docket_number: str) -> Optional[dict]:
     return request(oyez_api_case(term, docket_number))
