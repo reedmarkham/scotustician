@@ -112,7 +112,11 @@ def process_case(term: int, case: dict, timestamp: str) -> list:
         return []
 
     case_full = get_case_full(term, docket_number)
-    if not case_full or not case_full.get('oral_argument_audio'):
+    if not case_full:
+        logger.warning(f"No full case data for {docket_number} (term {term})")
+        return []
+    if 'oral_argument_audio' not in case_full or not case_full['oral_argument_audio']:
+        logger.info(f"No oral arguments for {docket_number} (term {term})")
         return []
 
     return [
@@ -134,7 +138,15 @@ def main() -> None:
                 logger.warning(f"No cases returned for term {term}")
                 continue
             for case in cases:
-                tasks.extend(process_case(term, case, timestamp))
+                if not isinstance(case, dict):
+                    logger.error(f"❌ Skipping malformed case (term {term}): expected dict but got {type(case)} - {case}")
+                    continue
+                try:
+                    tasks.extend(process_case(term, case, timestamp))
+                except Exception as e:
+                    logger.error(f"❌ Failed to process case in term {term}: {e}")
+                    logger.debug(f"Case content: {case}", exc_info=True)
+
         except Exception as e:
             logger.error(f"Failed to process term {term}: {e}")
 
@@ -152,7 +164,7 @@ def main() -> None:
                     total_uploaded += 1
                     total_bytes += size_mb
             except Exception as e:
-                logger.error(f"Exception during task: {e}")
+                logger.error(f"Exception during task: {e}", exc_info=True)
 
     duration = time.time() - start_time
     logger.info(f"🎉 Completed {total_uploaded} uploads | Total size: {total_bytes:.2f} MB | Total time: {duration:.2f}s")
