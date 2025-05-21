@@ -1,6 +1,7 @@
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from helpers import (
     get_transcript_s3,
     generate_case_embedding,
@@ -8,11 +9,12 @@ from helpers import (
     ensure_index_exists,
     index_case_embedding_to_opensearch
 )
+
 import boto3
 from opensearchpy import OpenSearch
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
-PREFIX = os.getenv("RAW_PREFIX", "raw/")
+PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
 INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
 MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))

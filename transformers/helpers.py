@@ -1,8 +1,8 @@
-import json
 import logging
+from typing import List, Tuple, Dict
+
 import boto3
 import pandas as pd
-from typing import List, Tuple, Dict
 from sentence_transformers import SentenceTransformer
 from opensearchpy import OpenSearch
 

@@ -1,4 +1,5 @@
 import os
+
 from opensearchpy import OpenSearch
 from helpers import (
     get_transcript_s3,
