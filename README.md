@@ -174,7 +174,7 @@ The ARN, access key, and secret key ID for a previously-created (i.e. via consol
 		"Action": "iam:PassRole",
 		"Resource": [
 			"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
-			"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersStack-TransformersCpuTaskDef*"
+			"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*"
 		]
 		}
 	]
