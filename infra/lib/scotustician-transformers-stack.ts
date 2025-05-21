@@ -46,7 +46,7 @@ export class ScotusticianTransformersStack extends Stack {
           S3_BUCKET: 'scotustician',
           MAX_WORKERS: '1',
         },
-        command: ['python', 'batch_embed.py'],
+        command: ['python', 'batch-embed.py'],
       });
     } else {
       const fargateTask = new ecs.FargateTaskDefinition(this, 'TransformersCpuTaskDef', {
@@ -61,9 +61,9 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           OPENSEARCH_HOST: process.env.OPENSEARCH_HOST || 'https://scotusticianope-x0u0hjgyswq0.us-east-1.es.amazonaws.com',
           S3_BUCKET: 'scotustician',
-          MAX_WORKERS: '1',
+          MAX_WORKERS: '2',
         },
-        command: ['python', 'batch_embed.py'],
+        command: ['python', 'batch-embed.py'],
       });
     }
 

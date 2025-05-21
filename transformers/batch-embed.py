@@ -18,7 +18,7 @@ PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
 INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
 MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", 4))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
 
 s3 = boto3.client("s3")
 logger = logging.getLogger(__name__)
