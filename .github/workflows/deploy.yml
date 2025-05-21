@@ -161,7 +161,7 @@ jobs:
             --outputs-file cdk-outputs-${{ matrix.stack }}.json \
             --require-approval never
 
-      - name: Parse CDK outputs and print to GitHub Actions
+      - name: Parse CDK outputs
         if: matrix.stack == 'transformers'
         id: parse_outputs
         run: |
