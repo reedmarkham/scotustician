@@ -1,11 +1,8 @@
-import logging
+import logging, io, json
 from typing import List, Tuple, Dict
 import xml.etree.ElementTree as ET
-import io
 
-import boto3
-import pandas as pd
-import numpy as np
+import boto3, botocore.exceptions, numpy as np
 from sentence_transformers import SentenceTransformer
 from opensearchpy import OpenSearch
 from transformers import AutoTokenizer
@@ -38,11 +35,18 @@ def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"📥 Downloading transcript from s3://{bucket}/{key}")
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
-        data = pd.read_json(obj['Body'])
+        data = json.load(obj['Body'])
+
+        # --- Validate expected structure ---
+        if "transcript" not in data or "sections" not in data["transcript"]:
+            raise ValueError("Missing expected keys: 'transcript.sections'")
 
         sections = data["transcript"]["sections"]
-        transcript_root = ET.Element("transcript")
+        if not isinstance(sections, list) or len(sections) == 0:
+            raise ValueError("Transcript 'sections' is empty or malformed")
 
+        # --- Generate XML ---
+        transcript_root = ET.Element("transcript")
         count = 0
         for section in sections:
             for turn in section.get("turns", []):
@@ -60,12 +64,15 @@ def get_transcript_s3(bucket: str, key: str) -> str:
                         utterance_el.text = text
                         count += 1
 
+        if count == 0:
+            raise ValueError("No text blocks found in transcript")
+
         logger.info(f"🧾 Serialized {count} utterances to XML.")
         xml_str_io = io.StringIO()
         ET.ElementTree(transcript_root).write(xml_str_io, encoding="unicode")
         xml_string = xml_str_io.getvalue()
 
-        # Persist to /xml/<oa_id>.xml
+        # --- Upload XML to /xml/<oa_id>.xml ---
         oa_id = key.split("/")[-1].replace(".json", "")
         xml_key = f"xml/{oa_id}.xml"
         s3.put_object(Bucket=bucket, Key=xml_key, Body=xml_string.encode("utf-8"))
@@ -74,7 +81,18 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         return xml_string
 
     except Exception as e:
-        logger.error(f"❌ Failed to load {key} from S3: {e}")
+        logger.error(f"❌ Failed to load or parse {key} from S3: {e}")
+
+        # Upload malformed file to junk/
+        try:
+            bad_obj = s3.get_object(Bucket=bucket, Key=key)
+            bad_data = bad_obj["Body"].read()
+            junk_key = f"junk/{key.split('/')[-1]}"
+            s3.put_object(Bucket=bucket, Key=junk_key, Body=bad_data)
+            logger.warning(f"🚮 Junk file saved to s3://{bucket}/{junk_key}")
+        except botocore.exceptions.BotoCoreError as junk_err:
+            logger.error(f"⚠️ Could not upload junk file: {junk_err}")
+
         raise
 
 def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
