@@ -33,10 +33,10 @@ Data Pipeline:
 After tasks complete, the S3 bucket should (depending on any actual "junk" data) look like:
 ```
 scotustician/
-├── raw/oa/      	# Raw oral argument JSON files
-├── xml/ 			    # Serialized XML for the oral argument transcripts if raw data contains this
-├── junk/      		# Raw oral argument JSON files malformed, missing key data, etc.
-├── logs/       	# JSON representations of pipeline metrics, later to be queried in Athena, etc.
+├── raw/oa/      	  # Raw oral argument JSON files
+├── xml/              # Serialized XML for the oral argument transcripts
+├── junk/      		  # Raw oral argument JSON files missing key data or malformed
+├── logs/       	  # JSON representations of pipeline metrics, later to be queried in Athena, etc.
 ```
 ---
 ## Prerequisites
