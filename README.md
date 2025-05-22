@@ -2,9 +2,11 @@
 
 **scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions.
 
-This project supports downstream search, clustering, and visualization tasks by processing SCOTUS OA transcripts into structured embeddings using Hugging Face transformer models.
+[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
 
-The [Hugging Face model](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) used produces 384-dimension embeddings and performs well for clustering and semantic search but future work can experiment with different models.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings using [Hugging Face transformer models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and storing them in an OpenSearch vector database.
+
+The current model generates 384-dimensional embeddings optimized for clustering and retrieval. Future work may experiment with alternative models to improve domain-specific accuracy or efficiency.
 
 ---
 
@@ -28,11 +30,11 @@ Data Pipeline:
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in an [OpenSearch vector database](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
-After tasks complete, S3 bucket will look like:
+After tasks complete, the S3 bucket should (depending on any actual "junk" data) look like:
 ```
 scotustician/
-├── raw/oa      	# Raw oral argument JSON files
-├── xml 			# Serialized XML for the oral argument transcripts if raw data contains this
+├── raw/oa/      	# Raw oral argument JSON files
+├── xml/ 			    # Serialized XML for the oral argument transcripts if raw data contains this
 ├── junk/      		# Raw oral argument JSON files malformed, missing key data, etc.
 ├── logs/       	# JSON representations of pipeline metrics, later to be queried in Athena, etc.
 ```
