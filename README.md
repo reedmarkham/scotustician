@@ -103,11 +103,13 @@ Submit
 ```
 6. **Run the tasks in an ad-hoc script**
 * You can manually trigger ECS tasks using the AWS CLI.
+
 6a. First, **review the CDK stack outputs** for the following values:
 - `ClusterName`
 - `PublicSubnetId1` or `PrivateSubnetId`
 - `SecurityGroupId`
 - Task Definition ARNs for each service
+
 6b. Run ingest task on Fargate (always CPU)
 ```bash
 #!/bin/bash
@@ -126,7 +128,7 @@ aws ecs run-task \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
   --region "$REGION"
 ```
-Check out your S3!
+**Check out your S3!**
 
 6c. (if GPU successful) run transformer task on EC2
 ```bash
@@ -152,6 +154,7 @@ aws ecs run-task \
 ```bash
 aws ec2 start-instances --instance-ids i-xxxxxxxxxxxxxxxxx --region us-east-1
 ```
+
 6c. (If GPU unavailable) Fargate Transformers Task (CPU)
 ```bash
 #!/bin/bash
@@ -171,7 +174,7 @@ aws ecs run-task \
   --region "$REGION"
 ```
 
-Check out your OpenSearch!
+**Check out your OpenSearch!**
 
 To-do: Semantic Search API + UI
 
