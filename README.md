@@ -4,7 +4,7 @@
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings using [Hugging Face transformer models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and storing them in an OpenSearch vector database.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings using [Hugging Face transformer models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and storing them in a PostgreSQL database with pgvector extension.
 
 The current model generates 384-dimensional embeddings optimized for clustering and retrieval. Future work may experiment with alternative models to improve domain-specific accuracy or efficiency.
 
@@ -15,7 +15,7 @@ The current model generates 384-dimensional embeddings optimized for clustering 
 ```
 scotustician/
 ├── ingest/            	# Containerized task to ingest raw data from Oyez.org API to S3
-├── transformers/      	# Containerized task for generating and storing text embeddings on OpenSearch
+├── transformers/      	# Containerized task for generating and storing text embeddings in PostgreSQL
 ├── infra/             	# AWS CDK code defining ECS services and other infrastructure
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions
 ```
@@ -29,7 +29,7 @@ Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
 2. Processed text from `ingest` on S3 is read by `transformers`, which uses [Hugging Face models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) to generate embeddings. 
 * Also serialized data (XML) for the transcript is written out to S3.
-3. Embeddings are stored in an [OpenSearch vector database](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
+3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
 After tasks complete, the S3 bucket should (depending on any actual "junk" data) look like:
 ```
@@ -50,7 +50,7 @@ You will need the ARN, access key, and secret access key for an existing AWS IAM
 
 ### 2. Deploy `scotustician-db`
 
-Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and OpenSearch infrastructure for storage and indexing.
+Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing.
 
 ### 3. Set GitHub Repository Secrets
 
@@ -63,8 +63,10 @@ Configure the following repository secrets in **GitHub > Settings > Secrets and 
 | `AWS_IAM_ARN`       | IAM user's ARN                                    | `arn:aws:iam::123456789012:user/github-actions`    |
 | `AWS_ACCESS_KEY`    | IAM user's access key                             | `AKIAIOSFODNN7EXAMPLE`                             |
 | `AWS_SECRET_KEY_ID` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
-| `OPENSEARCH_HOST`   | OpenSearch domain URL                             | `search-my-domain.us-east-1.es.amazonaws.com`      |
-| `OPENSEARCH_PASS`   | Password for the OpenSearch admin user            | `superSecurePass123!`                              |
+| `POSTGRES_HOST`     | PostgreSQL database host                          | `my-rds-instance.us-east-1.rds.amazonaws.com`     |
+| `POSTGRES_USER`     | PostgreSQL username                               | `postgres`                                         |
+| `POSTGRES_PASS`     | PostgreSQL password                               | `superSecurePass123!`                              |
+| `POSTGRES_DB`       | PostgreSQL database name                          | `scotustician`                                     |
 
 ---
 
@@ -202,7 +204,7 @@ aws ecs run-task \
   --region "$REGION"
 ```
 
-Check your OpenSearch dashboard for embedding results.
+Check your PostgreSQL database for embedding results.
 
 ---
 

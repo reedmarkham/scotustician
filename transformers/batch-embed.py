@@ -7,12 +7,12 @@ from helpers import (
     get_transcript_s3,
     generate_case_embedding,
     extract_metadata_from_key,
-    ensure_index_exists,
-    index_case_embedding_to_opensearch
+    ensure_tables_exist,
+    insert_case_embedding_to_postgres
 )
 
 import boto3
-from opensearchpy import OpenSearch
+import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
@@ -25,21 +25,24 @@ s3 = boto3.client("s3")
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Validate OpenSearch env vars
-OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST")
-OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS")
+# Validate Postgres env vars
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASS = os.getenv("POSTGRES_PASS")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
 
-if not OPENSEARCH_HOST or not OPENSEARCH_PASS:
-    raise EnvironmentError("Missing OPENSEARCH_HOST or OPENSEARCH_PASS")
+if not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASS, POSTGRES_DB]):
+    raise EnvironmentError("Missing required Postgres environment variables")
 
-logger.info(f"🔐 Connecting to OpenSearch at {OPENSEARCH_HOST}")
+logger.info(f"🔐 Connecting to Postgres at {POSTGRES_HOST}")
 
-os_client = OpenSearch(
-    hosts=[{'host': OPENSEARCH_HOST, 'port': 443}],
-    http_auth=('admin', OPENSEARCH_PASS),
-    use_ssl=True,
-    verify_certs=True
-)
+def get_db_connection():
+    return psycopg2.connect(
+        host=POSTGRES_HOST,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASS,
+        database=POSTGRES_DB
+    )
 
 def list_s3_keys(bucket: str, prefix: str):
     paginator = s3.get_paginator("list_objects_v2")
@@ -53,9 +56,12 @@ def process_key(key: str):
         speaker_list = extract_speaker_list(xml_string)
         meta = extract_metadata_from_key(key)
         embedding, text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
-        index_case_embedding_to_opensearch(
-            embedding, text, meta, key, INDEX_NAME, os_client, speaker_list
-        )
+        
+        with get_db_connection() as conn:
+            insert_case_embedding_to_postgres(
+                embedding, text, meta, key, conn, speaker_list
+            )
+        
         return f"✅ Processed: {key}"
     except Exception as e:
         return f"❌ Failed: {key} | {e}"
@@ -64,7 +70,9 @@ def process_key(key: str):
 def main():
     logger.info(f"🔍 Scanning s3://{BUCKET}/{PREFIX}")
     keys = list(list_s3_keys(BUCKET, PREFIX))
-    ensure_index_exists(os_client, INDEX_NAME)
+    
+    with get_db_connection() as conn:
+        ensure_tables_exist(conn)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(process_key, key) for key in keys]

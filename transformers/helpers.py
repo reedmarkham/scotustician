@@ -4,7 +4,8 @@ import xml.etree.ElementTree as ET
 
 import boto3, botocore.exceptions, numpy as np
 from sentence_transformers import SentenceTransformer
-from opensearchpy import OpenSearch
+import psycopg2
+from psycopg2.extras import Json
 from transformers import AutoTokenizer
 
 # Initialize logging
@@ -151,45 +152,43 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
         "oa_id": oa_id,
     }
 
-def ensure_index_exists(os_client: OpenSearch, index_name: str):
-    if os_client.indices.exists(index=index_name):
-        return
+def ensure_tables_exist(conn):
+    logger.info("📚 Ensuring Postgres tables exist...")
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scotustician.transcript_embeddings (
+                id SERIAL PRIMARY KEY,
+                text TEXT NOT NULL,
+                vector vector(384),
+                case_name VARCHAR(255),
+                term VARCHAR(10),
+                case_id VARCHAR(255) NOT NULL,
+                oa_id VARCHAR(255),
+                source_key VARCHAR(500),
+                xml_uri VARCHAR(500),
+                speaker_list JSONB,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scotustician.raw_transcripts (
+                id SERIAL PRIMARY KEY,
+                case_id VARCHAR(255) NOT NULL,
+                s3_key VARCHAR(500) NOT NULL,
+                raw_data JSONB NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+    logger.info("✅ Tables ensured.")
 
-    logger.info(f"📚 Creating OpenSearch index '{index_name}'...")
-    os_client.indices.create(index=index_name, body={
-        "mappings": {
-            "properties": {
-                "text": {"type": "text"},
-                "vector": {
-                    "type": "knn_vector",
-                    "dimension": 384,
-                    "similarity": "cosine"
-                },
-                "case_name": {"type": "keyword"},
-                "term": {"type": "keyword"},
-                "case_id": {"type": "keyword"},
-                "oa_id": {"type": "keyword"},
-                "source_key": {"type": "keyword"},
-                "xml_uri": {"type": "keyword"},
-                "speaker_list": {
-                    "type": "nested",
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "name": {"type": "keyword"}
-                    }
-                }
-            }
-        }
-    })
-    logger.info(f"✅ Index '{index_name}' created.")
-
-def index_case_embedding_to_opensearch(
+def insert_case_embedding_to_postgres(
     embedding: List[float],
     full_text: str,
     meta: Dict[str, str],
     source_key: str,
-    index_name: str,
-    os_client: OpenSearch,
+    conn,
     speaker_list: List[Dict[str, str]]
 ):
     assert len(embedding) == 384, f"Embedding has invalid dimension: {len(embedding)}"
@@ -198,17 +197,22 @@ def index_case_embedding_to_opensearch(
     xml_key = f"xml/{meta['oa_id'].replace('.json', '')}.xml"
     xml_uri = f"s3://{bucket_name}/{xml_key}"
 
-    doc = {
-        "vector": embedding,
-        "text": full_text,
-        "term": meta["term"],
-        "case_name": meta["case_name"],
-        "case_id": meta["case_id"],
-        "oa_id": meta["oa_id"],
-        "source_key": source_key,
-        "xml_uri": xml_uri,
-        "speaker_list": speaker_list
-    }
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO scotustician.transcript_embeddings 
+            (text, vector, case_name, term, case_id, oa_id, source_key, xml_uri, speaker_list)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            full_text,
+            embedding,
+            meta["case_name"],
+            meta["term"],
+            meta["case_id"],
+            meta["oa_id"],
+            source_key,
+            xml_uri,
+            Json(speaker_list)
+        ))
+        conn.commit()
 
-    logger.info(f"📝 Indexing OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
-    os_client.index(index=index_name, id=meta["oa_id"], body=doc)
+    logger.info(f"📝 Inserted/Updated OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
