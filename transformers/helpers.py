@@ -180,6 +180,37 @@ def ensure_tables_exist(conn):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scotustician.case_decisions (
+                id SERIAL PRIMARY KEY,
+                case_id VARCHAR(255) NOT NULL,
+                case_name VARCHAR(255),
+                term VARCHAR(10),
+                docket VARCHAR(50),
+                decision_date DATE,
+                decision_type VARCHAR(50),
+                disposition VARCHAR(100),
+                majority_opinion_author VARCHAR(100),
+                chief_justice VARCHAR(100),
+                vote_split VARCHAR(20),
+                procedural_ruling BOOLEAN,
+                consolidated_cases TEXT[],
+                lower_court VARCHAR(200),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scotustician.justice_votes (
+                id SERIAL PRIMARY KEY,
+                case_id VARCHAR(255) NOT NULL,
+                justice_name VARCHAR(100) NOT NULL,
+                vote_type VARCHAR(50) NOT NULL,
+                opinion_type VARCHAR(50),
+                is_author BOOLEAN,
+                joined_opinions TEXT[]
+            );
+        """)
         conn.commit()
     logger.info("✅ Tables ensured.")
 
