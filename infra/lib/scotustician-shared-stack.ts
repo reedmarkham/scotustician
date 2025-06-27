@@ -20,16 +20,11 @@ export class ScotusticianSharedStack extends cdk.Stack {
     // --- VPC + Cluster ---
     this.vpc = new ec2.Vpc(this, 'ScotusticianVpc', {
       maxAzs: 2,
-      natGateways: 1,
+      natGateways: 0,
       subnetConfiguration: [
         {
           name: 'public',
           subnetType: ec2.SubnetType.PUBLIC,
-          cidrMask: 24,
-        },
-        {
-          name: 'private',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
           cidrMask: 24,
         },
       ],
@@ -37,6 +32,18 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
     this.vpc.addGatewayEndpoint('S3Endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
+
+    this.vpc.addInterfaceEndpoint('EcrEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR,
+    });
+
+    this.vpc.addInterfaceEndpoint('EcrDkrEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+    });
+
+    this.vpc.addInterfaceEndpoint('LogsEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
     });
 
     this.cluster = new ecs.Cluster(this, 'ScotusticianCluster', {
@@ -62,7 +69,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
       const instance = new ec2.CfnInstance(this, 'GpuSpotInstance', {
         imageId: ami,
         instanceType: 'g4dn.micro',
-        subnetId: this.vpc.privateSubnets[0].subnetId,
+        subnetId: this.vpc.publicSubnets[0].subnetId,
         securityGroupIds: [instanceSG.securityGroupId],
         iamInstanceProfile: new iam.CfnInstanceProfile(this, 'GpuInstanceProfile', {
           roles: [instanceRole.roleName],
@@ -100,8 +107,8 @@ export class ScotusticianSharedStack extends cdk.Stack {
       value: this.vpc.publicSubnets[0].subnetId,
     });
 
-    new cdk.CfnOutput(this, 'PrivateSubnetId', {
-      value: this.vpc.privateSubnets[0].subnetId,
+    new cdk.CfnOutput(this, 'PublicSubnetId2', {
+      value: this.vpc.publicSubnets[1].subnetId,
     });
   }
 }
