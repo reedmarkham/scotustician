@@ -11,7 +11,7 @@ The current model generates 384-dimensional embeddings optimized for clustering 
 ---
 
 ## System Design
-![scotustician](/scotustician.png)
+![scotustician](/scotustician-architecture.svg)
 ```
 scotustician/
 ├── ingest/            	# Containerized task to ingest raw data from Oyez.org API to S3
