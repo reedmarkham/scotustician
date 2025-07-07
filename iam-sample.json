@@ -124,14 +124,14 @@
 			],
 			"Resource": "*"
 		},
-			{
-		"Sid": "AllowPassRoleForScotusticianTasks",
-		"Effect": "Allow",
-		"Action": "iam:PassRole",
-		"Resource": [
-			"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
-			"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*"
-		]
+		{
+			"Sid": "AllowPassRoleForScotusticianTasks",
+			"Effect": "Allow",
+			"Action": "iam:PassRole",
+			"Resource": [
+				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
+				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*"
+			]
 		},
 		{
 			"Sid": "AllowDetachNetworkInterface",
