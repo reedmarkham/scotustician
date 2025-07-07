@@ -127,7 +127,9 @@
 		{
 			"Sid": "AllowPassRoleForScotusticianTasks",
 			"Effect": "Allow",
-			"Action": "iam:PassRole",
+			"Action": [
+				"iam:PassRole"
+			],
 			"Resource": [
 				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
 				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*"
@@ -136,8 +138,10 @@
 		{
 			"Sid": "AllowDetachNetworkInterface",
 			"Effect": "Allow",
-			"Action": "ec2:DetachNetworkInterface",
-			"Resource": "arn:aws:ec2:us-east-1:868594786624:network-interface/eni-027ee3ae382ce08b1"
+			"Action": [
+				"ec2:DetachNetworkInterface"
+			],
+			"Resource": "arn:aws:ec2:us-east-1:<ACCOUNT_ID>:network-interface/eni-027ee3ae382ce08b1"
 		}
 	]
 }
