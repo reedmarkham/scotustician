@@ -134,6 +134,7 @@
 		]
 		},
 		{
+			"Sid": "AllowDetachNetworkInterface",
 			"Effect": "Allow",
 			"Action": "ec2:DetachNetworkInterface",
 			"Resource": "arn:aws:ec2:us-east-1:868594786624:network-interface/eni-027ee3ae382ce08b1"
