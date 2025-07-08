@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 
 import boto3, botocore.exceptions, numpy as np
 from sentence_transformers import SentenceTransformer
-import psycopg2
 from psycopg2.extras import Json
 from transformers import AutoTokenizer
 

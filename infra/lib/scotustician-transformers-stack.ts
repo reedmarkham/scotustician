@@ -6,6 +6,7 @@ import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 export interface ScotusticianTransformersStackProps extends StackProps {
   vpc: ec2.IVpc;
@@ -22,8 +23,8 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    const opensearchHost = this.node.tryGetContext('opensearchHost') || 'search-scotusticianope-7blhq5zpznol-eiecodmuf22elz7mvu2cx23qsu.us-east-1.es.amazonaws.com';
-    const opensearchPass = this.node.tryGetContext('opensearchPass') || 'REPOSITORY_SECRET';
+    const postgresHost = this.node.tryGetContext('postgresHost') || 'POSTGRES_HOST_FROM_CONTEXT';
+    const postgresSecretName = this.node.tryGetContext('postgresSecretName') || 'scotustician-db-secret';
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
           directory: '../transformers',
@@ -32,6 +33,16 @@ export class ScotusticianTransformersStack extends Stack {
             BUILD_DATE: new Date().toISOString(),
           },
         });
+
+    // Create security group for Fargate tasks
+    const fargateSecurityGroup = new ec2.SecurityGroup(this, 'FargateSecurityGroup', {
+      vpc: props.vpc,
+      allowAllOutbound: true,
+      description: 'Security group for Fargate tasks accessing RDS',
+    });
+
+    // Reference the PostgreSQL secret from Secrets Manager
+    const postgresSecret = secretsmanager.Secret.fromSecretNameV2(this, 'PostgresSecret', postgresSecretName);
 
     let taskDefinition: ecs.TaskDefinition;
     let container: ecs.ContainerDefinition;
@@ -49,14 +60,17 @@ export class ScotusticianTransformersStack extends Stack {
         gpuCount: 1,
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          OPENSEARCH_HOST: opensearchHost,
-          OPENSEARCH_PASS: opensearchPass,
+          POSTGRES_HOST: postgresHost,
+          POSTGRES_USER: 'postgres',
+          POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/',
-          INDEX_NAME: 'oa-embeddings',
           MODEL_NAME: 'all-MiniLM-L6-v2',
           BATCH_SIZE: '16',
           MAX_WORKERS: '1'
+        },
+        secrets: {
+          POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
         },
         command: ['python', 'batch-embed.py'],
       });
@@ -71,14 +85,17 @@ export class ScotusticianTransformersStack extends Stack {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          OPENSEARCH_HOST: opensearchHost,
-          OPENSEARCH_PASS: opensearchPass,
+          POSTGRES_HOST: postgresHost,
+          POSTGRES_USER: 'postgres',
+          POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/',
-          INDEX_NAME: 'oa-embeddings',
           MODEL_NAME: 'all-MiniLM-L6-v2',
           BATCH_SIZE: '16',
           MAX_WORKERS: '2'
+        },
+        secrets: {
+          POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
         },
         command: ['python', 'batch-embed.py'],
       });
@@ -90,9 +107,10 @@ export class ScotusticianTransformersStack extends Stack {
       hardLimit: 65536,
     });
 
+    // Grant access to Secrets Manager for PostgreSQL credentials
     taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ['es:ESHttpPost', 'es:ESHttpPut', 'es:ESHttpGet', 'es:ESHttpHead'],
-      resources: [`arn:aws:es:us-east-1:${this.account}:domain/scotusticianope-x0u0hjgyswq0/*`],
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [postgresSecret.secretArn],
     }));
 
     taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -111,6 +129,12 @@ export class ScotusticianTransformersStack extends Stack {
 
     new CfnOutput(this, useGpu ? 'TransformersGpuContainerName' : 'TransformersCpuContainerName', {
       value: container.containerName,
+    });
+
+    // Output the security group ID for RDS configuration
+    new CfnOutput(this, 'FargateSecurityGroupId', {
+      value: fargateSecurityGroup.securityGroupId,
+      description: 'Security group ID for Fargate tasks - allow this in RDS security group',
     });
 
     const logGroup = new logs.LogGroup(this, 'TransformersLogGroup', {

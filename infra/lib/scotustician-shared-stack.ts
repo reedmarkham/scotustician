@@ -27,6 +27,11 @@ export class ScotusticianSharedStack extends cdk.Stack {
           subnetType: ec2.SubnetType.PUBLIC,
           cidrMask: 24,
         },
+        {
+          name: 'private',
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+          cidrMask: 24,
+        },
       ],
     });
 
@@ -44,6 +49,10 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
     this.vpc.addInterfaceEndpoint('LogsEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+    });
+
+    this.vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
     });
 
     this.cluster = new ecs.Cluster(this, 'ScotusticianCluster', {
@@ -109,6 +118,14 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'PublicSubnetId2', {
       value: this.vpc.publicSubnets[1].subnetId,
+    });
+
+    new cdk.CfnOutput(this, 'PrivateSubnetId1', {
+      value: this.vpc.isolatedSubnets[0].subnetId,
+    });
+
+    new cdk.CfnOutput(this, 'PrivateSubnetId2', {
+      value: this.vpc.isolatedSubnets[1].subnetId,
     });
   }
 }
