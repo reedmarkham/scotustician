@@ -89,7 +89,8 @@ jobs:
             --toolkit-stack-name $TOOLKIT_STACK \
             $CONTEXT \
             --outputs-file cdk-outputs-shared.json \
-            --require-approval never
+            --require-approval never \
+            --force
 
       - name: Upload shared outputs
         uses: actions/upload-artifact@v4
@@ -137,7 +138,8 @@ jobs:
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
             --toolkit-stack-name $TOOLKIT_STACK \
             --outputs-file cdk-outputs-ingest.json \
-            --require-approval never
+            --require-approval never \
+            --force
 
       - name: Upload ingest outputs
         uses: actions/upload-artifact@v4
@@ -207,7 +209,8 @@ jobs:
             --toolkit-stack-name $TOOLKIT_STACK \
             $CONTEXT \
             --outputs-file cdk-outputs-transformers.json \
-            --require-approval never
+            --require-approval never \
+            --force
 
       - name: Upload transformers outputs
         uses: actions/upload-artifact@v4
