@@ -103,7 +103,7 @@ if [[ -z "$SG_ID" || "$SG_ID" == "None" ]]; then
   exit 1
 fi
 
-echo "Launching TRANSFORMERS task: $TASK_DEF in cluster: $CLUSTER"
+echo "Launching text embeddings task: $TASK_DEF in cluster: $CLUSTER"
 
 aws ecs run-task \
   --cluster "$CLUSTER" \
