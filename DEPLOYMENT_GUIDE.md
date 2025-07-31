@@ -13,7 +13,7 @@ This guide explains how to connect your Fargate application to the PostgreSQL RD
 ### 2. Fargate Task Definition Updates
 - **Environment Variables**: Changed from OpenSearch to PostgreSQL
   - `POSTGRES_HOST`: Database endpoint (set via CDK context)
-  - `POSTGRES_USER`: postgres
+  - `POSTGRES_USER`: dbuser
   - `POSTGRES_DB`: scotustician
 - **Secrets**: Added PostgreSQL password from Secrets Manager
 - **Security Group**: Created dedicated security group for Fargate tasks
@@ -31,7 +31,7 @@ Add these values to your CDK context (cdk.json or CLI):
 ```json
 {
   "postgresHost": "your-rds-endpoint.region.rds.amazonaws.com",
-  "postgresSecretName": "your-postgres-secret-name"
+  "postgresSecretName": "scotustician-db-credentials"
 }
 ```
 
@@ -116,8 +116,8 @@ When running ECS tasks, specify:
 ## Testing Connectivity
 ```bash
 # Test from within the VPC (e.g., EC2 instance)
-psql -h your-rds-endpoint.region.rds.amazonaws.com -U postgres -d scotustician
+psql -h your-rds-endpoint.region.rds.amazonaws.com -U dbuser -d scotustician
 
 # Test Secrets Manager access
-aws secretsmanager get-secret-value --secret-id your-postgres-secret-name
+aws secretsmanager get-secret-value --secret-id scotustician-db-credentials
 ```

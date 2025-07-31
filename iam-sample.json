@@ -39,17 +39,65 @@
 			"Resource": "arn:aws:iam::<ACCOUNT_ID>:role/cdk-sctstcn-cfn-exec-role-*"
 		},
 		{
-			"Sid": "ECSAndEC2Management",
+			"Sid": "ECSManagement",
 			"Effect": "Allow",
 			"Action": [
-				"ecs:*",
+				"ecs:CreateCluster",
+				"ecs:DeleteCluster",
+				"ecs:DescribeClusters",
+				"ecs:CreateService",
+				"ecs:UpdateService",
+				"ecs:DeleteService",
+				"ecs:DescribeServices",
+				"ecs:RegisterTaskDefinition",
+				"ecs:DeregisterTaskDefinition",
+				"ecs:DescribeTaskDefinition",
+				"ecs:ListTaskDefinitions",
+				"ecs:RunTask",
+				"ecs:StopTask",
+				"ecs:DescribeTasks",
+				"ecs:ListTasks",
+				"ecs:ListClusters",
+				"ecs:CreateCapacityProvider",
+				"ecs:DescribeCapacityProviders",
+				"ecs:TagResource",
+				"ecs:UntagResource"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "EC2Management",
+			"Effect": "Allow",
+			"Action": [
 				"ec2:Describe*",
 				"ec2:CreateTags",
 				"ec2:RunInstances",
+				"ec2:StartInstances",
+				"ec2:StopInstances",
+				"ec2:TerminateInstances",
 				"ec2:CreateSecurityGroup",
 				"ec2:DeleteSecurityGroup",
 				"ec2:AuthorizeSecurityGroupIngress",
-				"ec2:AuthorizeSecurityGroupEgress"
+				"ec2:AuthorizeSecurityGroupEgress",
+				"ec2:RevokeSecurityGroupIngress",
+				"ec2:RevokeSecurityGroupEgress",
+				"ec2:CreateVpc",
+				"ec2:DeleteVpc",
+				"ec2:CreateSubnet",
+				"ec2:DeleteSubnet",
+				"ec2:CreateInternetGateway",
+				"ec2:AttachInternetGateway",
+				"ec2:DetachInternetGateway",
+				"ec2:DeleteInternetGateway",
+				"ec2:CreateRouteTable",
+				"ec2:DeleteRouteTable",
+				"ec2:CreateRoute",
+				"ec2:DeleteRoute",
+				"ec2:AssociateRouteTable",
+				"ec2:DisassociateRouteTable",
+				"ec2:CreateVpcEndpoint",
+				"ec2:DeleteVpcEndpoint",
+				"ec2:ModifyVpcEndpoint"
 			],
 			"Resource": "*"
 		},
@@ -95,23 +143,9 @@
 				"secretsmanager:GetSecretValue",
 				"secretsmanager:DescribeSecret"
 			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "ELBAccessForFargate",
-			"Effect": "Allow",
-			"Action": [
-				"elasticloadbalancing:*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "CloudMapAccess",
-			"Effect": "Allow",
-			"Action": [
-				"servicediscovery:*"
-			],
-			"Resource": "*"
+			"Resource": [
+				"arn:aws:secretsmanager:*:<ACCOUNT_ID>:secret:scotustician-db-credentials*"
+			]
 		},
 		{
 			"Sid": "ServiceQuotasAccess",

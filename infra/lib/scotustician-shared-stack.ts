@@ -69,9 +69,23 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
       const instanceSG = new ec2.SecurityGroup(this, 'GpuInstanceSG', {
         vpc: this.vpc,
-        allowAllOutbound: true,
+        allowAllOutbound: false,
         description: 'ECS GPU instance SG',
       });
+
+      // Allow HTTPS outbound for ECR/S3/API access
+      instanceSG.addEgressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(443),
+        'HTTPS for ECR/S3/API access'
+      );
+
+      // Allow PostgreSQL outbound for database access
+      instanceSG.addEgressRule(
+        ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
+        ec2.Port.tcp(5432),
+        'PostgreSQL database access'
+      );
 
       const ami = ecs.EcsOptimizedImage.amazonLinux2().getImage(this).imageId;
 

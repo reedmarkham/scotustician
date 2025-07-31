@@ -24,7 +24,7 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     const postgresHost = this.node.tryGetContext('postgresHost') || 'POSTGRES_HOST_FROM_CONTEXT';
-    const postgresSecretName = this.node.tryGetContext('postgresSecretName') || 'scotustician-db-secret';
+    const postgresSecretName = this.node.tryGetContext('postgresSecretName') || 'scotustician-db-credentials';
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
           directory: '../transformers',
@@ -37,9 +37,23 @@ export class ScotusticianTransformersStack extends Stack {
     // Create security group for Fargate tasks
     const fargateSecurityGroup = new ec2.SecurityGroup(this, 'FargateSecurityGroup', {
       vpc: props.vpc,
-      allowAllOutbound: true,
+      allowAllOutbound: false,
       description: 'Security group for Fargate tasks accessing RDS',
     });
+
+    // Allow HTTPS outbound for S3/ECR/API access
+    fargateSecurityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(443),
+      'HTTPS for S3/ECR/API access'
+    );
+
+    // Allow PostgreSQL outbound for database access
+    fargateSecurityGroup.addEgressRule(
+      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
+      ec2.Port.tcp(5432),
+      'PostgreSQL database access'
+    );
 
     // Reference the PostgreSQL secret from Secrets Manager
     const postgresSecret = secretsmanager.Secret.fromSecretNameV2(this, 'PostgresSecret', postgresSecretName);
@@ -61,7 +75,7 @@ export class ScotusticianTransformersStack extends Stack {
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
           POSTGRES_HOST: postgresHost,
-          POSTGRES_USER: 'postgres',
+          POSTGRES_USER: 'dbuser',
           POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/',
@@ -86,7 +100,7 @@ export class ScotusticianTransformersStack extends Stack {
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
           POSTGRES_HOST: postgresHost,
-          POSTGRES_USER: 'postgres',
+          POSTGRES_USER: 'dbuser',
           POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/',

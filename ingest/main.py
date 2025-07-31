@@ -242,6 +242,38 @@ def main() -> None:
         logger.info(f"• {k.replace('_', ' ').capitalize()}: {v}")
 
     write_summary_to_s3(summary, timestamp)
+    
+    # Print sample data for validation
+    logger.info("\n🔍 Sample Data Validation:")
+    if total_uploaded > 0:
+        try:
+            # List recent uploads
+            response = s3.list_objects_v2(
+                Bucket=BUCKET,
+                Prefix=f'raw/oa/',
+                MaxKeys=5
+            )
+            
+            if 'Contents' in response:
+                logger.info("📦 Recent S3 uploads:")
+                for obj in response['Contents'][:5]:
+                    logger.info(f"  - {obj['Key']} | Size: {obj['Size']/1024:.2f} KB | Modified: {obj['LastModified']}")
+                
+                # Download and show sample content
+                sample_key = response['Contents'][0]['Key']
+                sample_obj = s3.get_object(Bucket=BUCKET, Key=sample_key)
+                sample_data = json.loads(sample_obj['Body'].read())
+                
+                logger.info(f"\n📄 Sample data from {sample_key}:")
+                logger.info(f"  - Case ID: {sample_data.get('case_id', 'N/A')}")
+                logger.info(f"  - Docket: {sample_data.get('docket_number', 'N/A')}")
+                logger.info(f"  - Term: {sample_data.get('term', 'N/A')}")
+                logger.info(f"  - Title: {sample_data.get('title', 'N/A')}")
+                if 'transcript' in sample_data and 'sections' in sample_data['transcript']:
+                    logger.info(f"  - Transcript sections: {len(sample_data['transcript']['sections'])}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to print sample data: {e}")
 
 
 if __name__ == "__main__":

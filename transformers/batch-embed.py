@@ -74,12 +74,67 @@ def main():
     with get_db_connection() as conn:
         ensure_tables_exist(conn)
 
+    processed_count = 0
+    failed_count = 0
+    
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(process_key, key) for key in keys]
         for future in as_completed(futures):
-            logger.info(future.result())
+            result = future.result()
+            logger.info(result)
+            if result.startswith("✅"):
+                processed_count += 1
+            else:
+                failed_count += 1
 
     logger.info("🎉 Batch embedding complete.")
+    logger.info(f"📊 Summary: Processed {processed_count}, Failed {failed_count}")
+    
+    # Print sample data for validation
+    logger.info("\n🔍 Database Validation:")
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # Count total embeddings
+                cursor.execute("SELECT COUNT(*) FROM scotustician.transcript_embeddings")
+                total_count = cursor.fetchone()[0]
+                logger.info(f"📈 Total embeddings in database: {total_count}")
+                
+                # Get sample embeddings
+                cursor.execute("""
+                    SELECT 
+                        case_id,
+                        docket_number,
+                        term,
+                        speaker_list,
+                        array_length(embedding, 1) as embedding_dim,
+                        created_at
+                    FROM scotustician.transcript_embeddings
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                """)
+                
+                logger.info("\n📄 Recent embeddings:")
+                for row in cursor.fetchall():
+                    logger.info(f"  - Case: {row[1]} (Term {row[2]})")
+                    logger.info(f"    ID: {row[0]}")
+                    logger.info(f"    Speakers: {', '.join(row[3][:3])}{'...' if len(row[3]) > 3 else ''}")
+                    logger.info(f"    Embedding dimension: {row[4]}")
+                    logger.info(f"    Created: {row[5]}")
+                    logger.info("")
+                
+                # Verify embedding dimensions
+                cursor.execute("""
+                    SELECT DISTINCT array_length(embedding, 1) as dim, COUNT(*) as count
+                    FROM scotustician.transcript_embeddings
+                    GROUP BY dim
+                """)
+                logger.info("🔢 Embedding dimensions:")
+                for row in cursor.fetchall():
+                    logger.info(f"  - Dimension {row[0]}: {row[1]} embeddings")
+                    
+    except Exception as e:
+        logger.error(f"Failed to validate database: {e}")
 
 if __name__ == "__main__":
     main()

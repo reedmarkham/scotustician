@@ -61,12 +61,11 @@ Configure the following repository secrets in **GitHub > Settings > Secrets and 
 | `AWS_ACCOUNT_ID`    | AWS account ID                                    | `123456789012`                                     |
 | `AWS_REGION`        | AWS region                                        | `us-east-1`                                        |
 | `AWS_IAM_ARN`       | IAM user's ARN                                    | `arn:aws:iam::123456789012:user/github-actions`    |
-| `AWS_ACCESS_KEY`    | IAM user's access key                             | `AKIAIOSFODNN7EXAMPLE`                             |
-| `AWS_SECRET_KEY_ID` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
-| `POSTGRES_HOST`     | PostgreSQL database host                          | `my-rds-instance.us-east-1.rds.amazonaws.com`     |
-| `POSTGRES_USER`     | PostgreSQL username                               | `postgres`                                         |
-| `POSTGRES_PASS`     | PostgreSQL password                               | `superSecurePass123!`                              |
-| `POSTGRES_DB`       | PostgreSQL database name                          | `scotustician`                                     |
+| `AWS_ACCESS_KEY_ID` | IAM user's access key                             | `AKIAIOSFODNN7EXAMPLE`                             |
+| `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
+| `S3_BUCKET`         | S3 bucket name (optional, defaults to scotustician) | `scotustician`                                   |
+
+> **Note**: PostgreSQL credentials are now managed through AWS Secrets Manager. The database host and secret name are configured via CDK context parameters. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for details.
 
 ---
 
@@ -128,83 +127,113 @@ To run GPU-enabled `transformers` tasks, your AWS account must have GPU vCPU quo
 
 ## Running ECS Tasks
 
-You can trigger ECS tasks manually using the AWS CLI.
+After deployment via CDK, you can run the data ingestion and transformation tasks using the provided shell scripts. These scripts automatically retrieve AWS resource identifiers from CloudFormation outputs, eliminating the need for manual configuration.
 
-### 🔄 Ingest Task (Fargate, CPU)
+### Prerequisites
 
-```bash
-#!/bin/bash
+1. Ensure AWS CLI is configured with appropriate credentials
+2. Verify that all CDK stacks have been successfully deployed
+3. Make scripts executable: `chmod +x scripts/*.sh`
 
-CLUSTER_NAME="ScotusticianCluster"
-TASK_DEF="ScotusticianIngestStack-IngestTaskDefXXXXXXXX"  # Replace with actual ARN
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"                      # Public or NAT-enabled private subnet
-SG_ID="sg-xxxxxxxxxxxxxxxxx"
-REGION="us-east-1"
+### Available Scripts
 
-aws ecs run-task \
-  --cluster "$CLUSTER_NAME" \
-  --launch-type FARGATE \
-  --task-definition "$TASK_DEF" \
-  --count 1 \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
-  --region "$REGION"
-```
+The `scripts/` directory contains the following utilities:
 
-Check your S3 bucket for results.
+| Script | Purpose |
+|--------|---------|
+| `ingest-data.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API |
+| `transform-data.sh` | Runs the transformer task to generate embeddings and store them in PostgreSQL |
+| `test-deployment.sh` | Validates the deployment and runs diagnostic checks |
 
----
+### Running Data Ingestion
 
-### ⚡ Transformer Task (EC2, GPU)
+To ingest oral argument data from the Oyez.org API:
 
 ```bash
-#!/bin/bash
-
-CLUSTER_NAME="ScotusticianCluster"
-TASK_DEF="ScotusticianTransformersStack-TransformersGpuTaskDefXXXXXXXX"
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"   # Private subnet for EC2
-SG_ID="sg-xxxxxxxxxxxxxxxxx"
-REGION="us-east-1"
-
-aws ecs run-task \
-  --cluster "$CLUSTER_NAME" \
-  --launch-type EC2 \
-  --task-definition "$TASK_DEF" \
-  --count 1 \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
-  --region "$REGION"
+./scripts/ingest-data.sh
 ```
 
-> ⚠️ This task uses a **Spot EC2 GPU instance**, which may be interrupted.
-> - The instance is tagged with `AutoStop=true` and will automatically stop at **7 PM ET** via Lambda.
-> - To run again, **manually start the instance**:
+This script will:
+- Dynamically retrieve the ECS cluster name and task definition from CloudFormation
+- Launch a Fargate task to ingest data
+- Store raw JSON files in S3 under `s3://scotustician/raw/oa/`
+- Print sample data for validation after completion
+
+You can override default environment variables:
+```bash
+aws ecs run-task ... --overrides '{
+  "containerOverrides": [{
+    "name": "IngestContainer",
+    "environment": [
+      {"name": "START_TERM", "value": "2023"},
+      {"name": "END_TERM", "value": "2024"},
+      {"name": "DRY_RUN", "value": "true"}
+    ]
+  }]
+}'
+```
+
+### Running Embedding Generation
+
+To generate embeddings from ingested data:
 
 ```bash
-aws ec2 start-instances --instance-ids i-xxxxxxxxxxxxxxxxx --region us-east-1
+./scripts/transform-data.sh
 ```
 
----
+This script will:
+- Detect whether GPU or CPU task definitions are available
+- Use appropriate security groups for RDS access
+- Read data from S3 and generate embeddings using Hugging Face models
+- Store embeddings in PostgreSQL with pgvector
+- Print database validation summary after completion
 
-### ⚡ "Fallback" Transformer Task (Fargate, CPU)
+### Testing the Deployment
+
+To validate your deployment:
 
 ```bash
-#!/bin/bash
-
-CLUSTER_NAME="ScotusticianCluster"
-TASK_DEF="ScotusticianTransformersStack-TransformersCpuTaskDefXXXXXXXX"
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"
-SG_ID="sg-xxxxxxxxxxxxxxxxx"
-REGION="us-east-1"
-
-aws ecs run-task \
-  --cluster "$CLUSTER_NAME" \
-  --launch-type FARGATE \
-  --task-definition "$TASK_DEF" \
-  --count 1 \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
-  --region "$REGION"
+./scripts/test-deployment.sh
 ```
 
-Check your PostgreSQL database for embedding results.
+This comprehensive test script will:
+- Verify all CloudFormation stacks exist
+- Check ECS cluster status and running tasks
+- Validate VPC endpoints and networking configuration
+- Test S3 bucket accessibility
+- Verify database secret configuration
+- Run a dry-run test of the ingest task
+- Provide a summary of deployment health
+
+### Monitoring Task Execution
+
+After launching tasks, monitor their progress:
+
+```bash
+# View real-time logs for ingest tasks
+aws logs tail /ecs/ingest --follow
+
+# View real-time logs for transformer tasks
+aws logs tail /ecs/transformers --follow
+
+# Check task status
+aws ecs describe-tasks \
+  --cluster <cluster-name> \
+  --tasks <task-arn>
+```
+
+### Advanced Usage
+
+For detailed AWS CLI commands and troubleshooting, refer to:
+- [AWS_RESOURCE_GUIDE.md](AWS_RESOURCE_GUIDE.md) - Comprehensive guide for AWS resource management
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Fargate to RDS connectivity setup
+
+### Important Notes
+
+- The ingest task requires public subnet access to reach the Oyez.org API
+- The transformer task should use private subnets when accessing RDS
+- GPU tasks will fall back to CPU if GPU resources are unavailable
+- All scripts respect the `AWS_REGION` environment variable (defaults to `us-east-1`)
 
 ---
 
