@@ -217,13 +217,23 @@ export class ScotusticianTransformersStack extends Stack {
         ? { subnetType: ec2.SubnetType.PUBLIC }
         : { subnetType: ec2.SubnetType.PUBLIC };
 
-      ingestCompletionRule.addTarget(new targets.EcsTask({
-        cluster: props.cluster,
-        taskDefinition,
-        role: eventRole,
-        subnetSelection,
-        assignPublicIp: true,
-      }));
+      // assignPublicIp is only supported for FARGATE tasks, not EC2
+      const taskTarget: targets.EcsTaskProps = useGpu 
+        ? {
+            cluster: props.cluster,
+            taskDefinition,
+            role: eventRole,
+            subnetSelection,
+          }
+        : {
+            cluster: props.cluster,
+            taskDefinition,
+            role: eventRole,
+            subnetSelection,
+            assignPublicIp: true,
+          };
+
+      ingestCompletionRule.addTarget(new targets.EcsTask(taskTarget));
 
       new CfnOutput(this, 'TransformersCompletionRuleArn', {
         value: ingestCompletionRule.ruleArn,
