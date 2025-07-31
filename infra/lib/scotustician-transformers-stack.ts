@@ -214,7 +214,7 @@ export class ScotusticianTransformersStack extends Stack {
       });
 
       const subnetSelection = useGpu 
-        ? { subnetType: ec2.SubnetType.PUBLIC }
+        ? { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }
         : { subnetType: ec2.SubnetType.PUBLIC };
 
       // assignPublicIp is only supported for FARGATE tasks, not EC2
