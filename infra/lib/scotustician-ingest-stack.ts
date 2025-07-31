@@ -116,6 +116,7 @@ export class ScotusticianIngestStack extends Stack {
       taskDefinition,
       role: eventRole,
       subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
+      launchType: ecs.LaunchType.FARGATE,
       assignPublicIp: true,
     }));
 
