@@ -220,11 +220,12 @@ export class ScotusticianTransformersStack extends Stack {
       // assignPublicIp is only supported for FARGATE tasks, not EC2
       const taskTarget: targets.EcsTaskProps = useGpu 
         ? {
-            // GPU tasks use EC2, no assignPublicIp needed
+            // GPU tasks use EC2, explicitly set launch type
             cluster: props.cluster,
             taskDefinition,
             role: eventRole,
             subnetSelection,
+            launchType: ecs.LaunchType.EC2,
           }
         : {
             // Non-GPU tasks use Fargate, can use assignPublicIp
@@ -232,6 +233,7 @@ export class ScotusticianTransformersStack extends Stack {
             taskDefinition,
             role: eventRole,
             subnetSelection,
+            launchType: ecs.LaunchType.FARGATE,
             assignPublicIp: true,
           };
 
