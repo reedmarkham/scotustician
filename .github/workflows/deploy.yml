@@ -33,6 +33,7 @@ jobs:
               - 'infra/**'
               - 'transformers/*'
               - 'transformers/**/*'
+              - '.github/workflows/**'
 
   deploy_shared:
     needs: plan
