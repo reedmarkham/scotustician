@@ -194,6 +194,13 @@ jobs:
             echo "gpu_quota=$output" >> $GITHUB_OUTPUT
           fi
 
+      - name: Clean up existing changeset
+        run: |
+          cd infra
+          aws cloudformation delete-change-set \
+            --stack-name ScotusticianTransformersStack \
+            --change-set-name cdk-deploy-change-set 2>/dev/null || true
+
       - name: Deploy transformers stack
         run: |
           cd infra
