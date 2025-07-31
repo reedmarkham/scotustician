@@ -14,7 +14,7 @@ const app = new cdk.App();
 
 const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', { env });
 
-new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
+const ingest = new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
   cluster: shared.cluster,
   vpc: shared.vpc,
   env,
@@ -23,5 +23,6 @@ new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
 new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
   cluster: shared.cluster,
   vpc: shared.vpc,
+  ingestTaskDefinitionArn: ingest.taskDefinitionArn,
   env,
 });

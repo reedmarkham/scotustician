@@ -91,7 +91,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
       const instance = new ec2.CfnInstance(this, 'GpuSpotInstance', {
         imageId: ami,
-        instanceType: 'G4dn.xlarge',
+        instanceType: 'g4dn.xlarge',
         subnetId: this.vpc.publicSubnets[0].subnetId,
         securityGroupIds: [instanceSG.securityGroupId],
         iamInstanceProfile: new iam.CfnInstanceProfile(this, 'GpuInstanceProfile', {

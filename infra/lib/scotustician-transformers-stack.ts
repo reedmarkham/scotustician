@@ -7,10 +7,13 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 
 export interface ScotusticianTransformersStackProps extends StackProps {
   vpc: ec2.IVpc;
   cluster: ecs.Cluster;
+  ingestTaskDefinitionArn?: string;
 }
 
 export class ScotusticianTransformersStack extends Stack {
@@ -174,5 +177,57 @@ export class ScotusticianTransformersStack extends Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       alarmDescription: 'Alarm if any ERROR-level logs are detected in the transformers container.',
     });
+
+    if (props.ingestTaskDefinitionArn) {
+      const eventRole = new iam.Role(this, 'TransformersEventRole', {
+        assumedBy: new iam.ServicePrincipal('events.amazonaws.com'),
+        inlinePolicies: {
+          EcsRunTask: new iam.PolicyDocument({
+            statements: [
+              new iam.PolicyStatement({
+                actions: ['ecs:RunTask'],
+                resources: [taskDefinition.taskDefinitionArn],
+              }),
+              new iam.PolicyStatement({
+                actions: ['iam:PassRole'],
+                resources: [
+                  taskDefinition.taskRole.roleArn,
+                  taskDefinition.executionRole!.roleArn,
+                ],
+              }),
+            ],
+          }),
+        },
+      });
+
+      const ingestCompletionRule = new events.Rule(this, 'IngestCompletionRule', {
+        eventPattern: {
+          source: ['aws.ecs'],
+          detailType: ['ECS Task State Change'],
+          detail: {
+            lastStatus: ['STOPPED'],
+            stopCode: ['TaskCompletedNormally'],
+            taskDefinitionArn: [props.ingestTaskDefinitionArn],
+          },
+        },
+        description: 'Trigger transformers when ingest task completes successfully',
+      });
+
+      const subnetSelection = useGpu 
+        ? { subnetType: ec2.SubnetType.PUBLIC }
+        : { subnetType: ec2.SubnetType.PUBLIC };
+
+      ingestCompletionRule.addTarget(new targets.EcsTask({
+        cluster: props.cluster,
+        taskDefinition,
+        role: eventRole,
+        subnetSelection,
+        assignPublicIp: true,
+      }));
+
+      new CfnOutput(this, 'TransformersCompletionRuleArn', {
+        value: ingestCompletionRule.ruleArn,
+      });
+    }
   }
 }
