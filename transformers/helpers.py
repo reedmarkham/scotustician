@@ -174,7 +174,6 @@ def insert_utterance_embeddings_to_postgres(
     source_key: str,
     conn
 ):
-    """Insert utterance-level embeddings into the database."""
     with conn.cursor() as cur:
         for utt in utterances:
             assert len(utt['embedding']) == 384, f"Embedding has invalid dimension: {len(utt['embedding'])}"
