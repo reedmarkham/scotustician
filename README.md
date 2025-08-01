@@ -52,7 +52,19 @@ You will need the ARN, access key, and secret access key for an existing AWS IAM
 
 Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing.
 
-### 3. Set GitHub Repository Secrets
+### 3. (Optional) Request GPU Instance Quota
+
+If you want to use GPU acceleration for the transformer tasks, request a service quota increase:
+
+1. Navigate to [AWS Service Quotas](https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas)
+2. Search for **"Running On-Demand G and VT instances"**
+3. Click on the quota and select **"Request quota increase"**
+4. Request at least 1-2 instances (g4dn.xlarge uses 4 vCPUs)
+5. Wait for approval (typically a few hours for small increases)
+
+> **Note**: The pipeline will automatically fall back to CPU if GPU quota is not available. This step is only required if you want to enable GPU acceleration.
+
+### 4. Set GitHub Repository Secrets
 
 Configure the following repository secrets in **GitHub > Settings > Secrets and variables > Actions > Repository secrets**:
 
@@ -103,25 +115,6 @@ super(scope, id, {
   synthesizer: new cdk.DefaultStackSynthesizer({ qualifier }),
 });
 ```
-
----
-
-## (Optional) Enable GPU Support on AWS EC2
-
-To run GPU-enabled `transformers` tasks, your AWS account must have GPU vCPU quotas.
-
-### Requesting a Quota Increase
-
-1. Go to the [EC2 vCPU Limits page](https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas)
-2. Search for:
-   - **Running Spot/On-Demand G and VT instances**, or
-   - **Running Spot/On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances**
-3. Click the relevant quota and **Request quota increase**
-4. AWS typically approves small increases (1 instance) within a few hours
-
-> If GPU capacity is unavailable, the pipeline will fall back to CPU-based infrastructure.
-
-> The [ECS cluster](infra/lib/scotustician-shared-stack.ts#62) and [transformers task definition](infra/lib/scotustician-transformers-stack.ts#41) should be adjusted depending on intended workload, budget, etc.
 
 ---
 

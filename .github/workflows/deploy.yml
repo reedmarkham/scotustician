@@ -202,7 +202,7 @@ jobs:
           echo "gpu_quota=0" >> $GITHUB_OUTPUT
           output=$(aws service-quotas get-service-quota \
             --service-code ec2 \
-            --quota-code L-3819A6DF \
+            --quota-code L-DB2E81BA \
             --query 'Quota.Value' --output text 2>&1) || true
           if [[ "$output" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             echo "gpu_quota=$output" >> $GITHUB_OUTPUT
