@@ -1,11 +1,11 @@
-import logging, io, json
-from typing import List, Tuple, Dict
+import logging, io, json, os
+from typing import List, Dict
 import xml.etree.ElementTree as ET
 
-import boto3, botocore.exceptions, numpy as np
-from sentence_transformers import SentenceTransformer
+import boto3, botocore.exceptions
 from psycopg2.extras import Json
 from transformers import AutoTokenizer
+from sentence_transformers import SentenceTransformer
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+tokenizer = AutoTokenizer.from_pretrained(f"sentence-transformers/{os.environ.get('MODEL_NAME', 'all-MiniLM-L6-v2')}")
 
 def extract_speaker_list(xml_string: str) -> List[Dict[str, str]]:
     try:
@@ -28,11 +28,11 @@ def extract_speaker_list(xml_string: str) -> List[Dict[str, str]]:
 
         return [{"id": sid, "name": speakers[sid]} for sid in sorted(speakers)]
     except Exception as e:
-        logger.warning(f"⚠️ Could not extract speaker list from XML: {e}")
+        logger.warning(f"Could not extract speaker list from XML: {e}")
         return []
 
 def get_transcript_s3(bucket: str, key: str) -> str:
-    logger.info(f"📥 Downloading transcript from s3://{bucket}/{key}")
+    logger.info(f"Downloading transcript from s3://{bucket}/{key}")
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.load(obj['Body'])
@@ -67,7 +67,7 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         if count == 0:
             raise ValueError("No text blocks found in transcript")
 
-        logger.info(f"🧾 Serialized {count} utterances to XML.")
+        logger.info(f"Serialized {count} utterances to XML.")
         xml_str_io = io.StringIO()
         ET.ElementTree(transcript_root).write(xml_str_io, encoding="unicode")
         xml_string = xml_str_io.getvalue()
@@ -76,12 +76,12 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         oa_id = key.split("/")[-1].replace(".json", "")
         xml_key = f"xml/{oa_id}.xml"
         s3.put_object(Bucket=bucket, Key=xml_key, Body=xml_string.encode("utf-8"))
-        logger.info(f"✅ Saved XML to s3://{bucket}/{xml_key}")
+        logger.info(f"Saved XML to s3://{bucket}/{xml_key}")
 
         return xml_string
 
     except Exception as e:
-        logger.error(f"❌ Failed to load or parse {key} from S3: {e}")
+        logger.error(f"Failed to load or parse {key} from S3: {e}")
 
         # Upload malformed file to junk/
         try:
@@ -89,18 +89,18 @@ def get_transcript_s3(bucket: str, key: str) -> str:
             bad_data = bad_obj["Body"].read()
             junk_key = f"junk/{key.split('/')[-1]}"
             s3.put_object(Bucket=bucket, Key=junk_key, Body=bad_data)
-            logger.warning(f"🚮 Junk file saved to s3://{bucket}/{junk_key}")
+            logger.warning(f"Junk file saved to s3://{bucket}/{junk_key}")
         except botocore.exceptions.BotoCoreError as junk_err:
-            logger.error(f"⚠️ Could not upload junk file: {junk_err}")
+            logger.error(f"Could not upload junk file: {junk_err}")
 
         raise
 
 def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
     tokens = tokenizer.encode(text, add_special_tokens=False)
-    logger.info(f"🧮 Token count before truncation: {len(tokens)}")
+    logger.info(f"Token count before truncation: {len(tokens)}")
 
     truncated_tokens = tokens[:max_tokens]
-    logger.info(f"✂️ Token count after truncation: {len(truncated_tokens)}")
+    logger.info(f"Token count after truncation: {len(truncated_tokens)}")
 
     return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
 
@@ -151,37 +151,6 @@ def generate_utterance_embeddings(
         logger.error(f"Failed to generate utterance embeddings from XML: {e}")
         raise
 
-def generate_case_embedding(
-    xml_string: str,
-    model_name: str,
-    batch_size: int
-) -> Tuple[List[float], str]:
-    """Legacy function that generates averaged case embedding."""
-    logger.info(f"⚙️ Loading model: {model_name}")
-    model = SentenceTransformer(model_name)
-
-    try:
-        root = ET.fromstring(xml_string)
-        turns = [
-            f"{el.attrib.get('speaker', 'Unknown')}: {el.text.strip()}"
-            for el in root.findall("utterance")
-            if el.text and len(el.text.strip().split()) > 3
-        ]
-
-        if not turns:
-            raise ValueError("No valid utterances found to embed.")
-
-        logger.info(f"🧠 Generating embeddings for {len(turns)} speaker turns.")
-        embeddings = model.encode(turns, batch_size=batch_size, show_progress_bar=True)
-        avg_embedding = np.mean(embeddings, axis=0).tolist()
-        full_text = "\n".join(turns)
-
-        return avg_embedding, full_text
-
-    except Exception as e:
-        logger.error(f"❌ Failed to generate embedding from XML: {e}")
-        raise
-
 def extract_metadata_from_key(key: str) -> Dict[str, str]:
     filename = key.split("/")[-1].replace(".json", "")
     oa_id = filename + ".json"
@@ -200,90 +169,20 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
     }
 
 def ensure_tables_exist(conn):
-    logger.info("📚 Ensuring Postgres tables exist...")
+    logger.info("Ensuring Postgres tables exist...")
+    
+    # Get the path to the SQL file
+    sql_file_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+    
+    # Read and execute the SQL file
+    with open(sql_file_path, 'r') as sql_file:
+        sql_content = sql_file.read()
+    
     with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scotustician.transcript_embeddings (
-                id SERIAL PRIMARY KEY,
-                text TEXT NOT NULL,
-                vector vector(384),
-                case_name VARCHAR(255),
-                term VARCHAR(10),
-                case_id VARCHAR(255) NOT NULL,
-                oa_id VARCHAR(255),
-                source_key VARCHAR(500),
-                xml_uri VARCHAR(500),
-                speaker_list JSONB,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scotustician.utterance_embeddings (
-                id SERIAL PRIMARY KEY,
-                case_id VARCHAR(255) NOT NULL,
-                oa_id VARCHAR(255) NOT NULL,
-                utterance_index INTEGER NOT NULL,
-                speaker_id VARCHAR(100),
-                speaker_name VARCHAR(255),
-                text TEXT NOT NULL,
-                vector vector(384) NOT NULL,
-                word_count INTEGER,
-                source_key VARCHAR(500),
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(case_id, utterance_index)
-            );
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_utterance_case_id 
-            ON scotustician.utterance_embeddings(case_id);
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_utterance_speaker 
-            ON scotustician.utterance_embeddings(speaker_name);
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scotustician.raw_transcripts (
-                id SERIAL PRIMARY KEY,
-                case_id VARCHAR(255) NOT NULL,
-                s3_key VARCHAR(500) NOT NULL,
-                raw_data JSONB NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scotustician.case_decisions (
-                id SERIAL PRIMARY KEY,
-                case_id VARCHAR(255) NOT NULL,
-                case_name VARCHAR(255),
-                term VARCHAR(10),
-                docket VARCHAR(50),
-                decision_date DATE,
-                decision_type VARCHAR(50),
-                disposition VARCHAR(100),
-                majority_opinion_author VARCHAR(100),
-                chief_justice VARCHAR(100),
-                vote_split VARCHAR(20),
-                procedural_ruling BOOLEAN,
-                consolidated_cases TEXT[],
-                lower_court VARCHAR(200),
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS scotustician.justice_votes (
-                id SERIAL PRIMARY KEY,
-                case_id VARCHAR(255) NOT NULL,
-                justice_name VARCHAR(100) NOT NULL,
-                vote_type VARCHAR(50) NOT NULL,
-                opinion_type VARCHAR(50),
-                is_author BOOLEAN,
-                joined_opinions TEXT[]
-            );
-        """)
+        cur.execute(sql_content)
         conn.commit()
-    logger.info("✅ Tables ensured.")
+    
+    logger.info("Tables exist.")
 
 def insert_case_embedding_to_postgres(
     embedding: List[float],
@@ -317,7 +216,7 @@ def insert_case_embedding_to_postgres(
         ))
         conn.commit()
 
-    logger.info(f"📝 Inserted/Updated OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
+    logger.info(f"Inserted/Updated OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
 
 def insert_utterance_embeddings_to_postgres(
     utterances: List[Dict],
