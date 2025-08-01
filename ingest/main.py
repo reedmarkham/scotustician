@@ -69,9 +69,9 @@ def log_junk_to_s3(term: int, item: Any, context: str):
 
     try:
         s3.put_object(Body=body.encode('utf-8'), Bucket=BUCKET, Key=key)
-        logger.info(f"🪵 Logged junk case to s3://{BUCKET}/{key}")
+        logger.info(f"Logged junk case to s3://{BUCKET}/{key}")
     except Exception as e:
-        logger.error(f"❌ Failed to log junk to S3: {e}")
+        logger.error(f"Failed to log junk to S3: {e}")
 
 def write_summary_to_s3(summary: dict, timestamp: str):
     date_prefix = timestamp.split('_')[0]
@@ -82,9 +82,9 @@ def write_summary_to_s3(summary: dict, timestamp: str):
             Key=key,
             Body=json.dumps(summary, indent=2).encode("utf-8")
         )
-        logger.info(f"📤 Uploaded summary to s3://{BUCKET}/{key}")
+        logger.info(f"Uploaded summary to s3://{BUCKET}/{key}")
     except Exception as e:
-        logger.error(f"❌ Failed to upload summary to S3: {e}")
+        logger.error(f"Failed to upload summary to S3: {e}")
 
 # --- Data functions ---
 def get_cases_by_term(term: int) -> list:
@@ -130,7 +130,7 @@ def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) ->
     else:
         s3.put_object(Body=serialized, Bucket=BUCKET, Key=key)
         duration = time.time() - start_time
-        logger.info(f"✅ Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
+        logger.info(f"Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
 
     return size_mb
 
@@ -149,7 +149,7 @@ def process_case(term: int, case: dict, timestamp: str) -> list:
         logger.info(f"No oral arguments for {docket_number} (term {term})")
         return []
 
-    logger.info(f"✅ Case {docket_number} (term {term}) has {len(case_full['oral_argument_audio'])} oral argument(s)")
+    logger.info(f"Case {docket_number} (term {term}) has {len(case_full['oral_argument_audio'])} oral argument(s)")
 
     return [
         (term, case, idx, oa, timestamp)
@@ -158,7 +158,7 @@ def process_case(term: int, case: dict, timestamp: str) -> list:
 
 # --- Main driver ---
 def main() -> None:
-    logger.info(f"🚀 Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
+    logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
     start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     tasks = []
@@ -180,7 +180,7 @@ def main() -> None:
                 cases_total += 1
 
                 if not isinstance(case, dict):
-                    logger.error(f"❌ Skipping malformed case (term {term}): expected dict but got {type(case)} - {case}")
+                    logger.error(f"Skipping malformed case (term {term}): expected dict but got {type(case)} - {case}")
                     log_junk_to_s3(term, case, context="non_dict_case")
                     cases_skipped += 1
                     continue
@@ -192,7 +192,7 @@ def main() -> None:
                     cases_skipped += 1
                     continue
 
-                logger.info(f"✅ Found case with docket number: {docket_number} (term {term})")
+                logger.info(f"Found case with docket number: {docket_number} (term {term})")
                 cases_with_docket += 1
 
                 try:
@@ -203,7 +203,7 @@ def main() -> None:
                         cases_skipped += 1
                     tasks.extend(subtasks)
                 except Exception as e:
-                    logger.error(f"❌ Failed to process case in term {term}: {e}")
+                    logger.error(f"Failed to process case in term {term}: {e}")
                     log_junk_to_s3(term, case, context="process_case_exception")
                     cases_skipped += 1
         except Exception as e:
@@ -237,7 +237,7 @@ def main() -> None:
         "dry_run": DRY_RUN,
     }
 
-    logger.info("📊 Ingestion Summary:")
+    logger.info("Ingestion Summary:")
     for k, v in summary.items():
         logger.info(f"• {k.replace('_', ' ').capitalize()}: {v}")
 
@@ -255,7 +255,7 @@ def main() -> None:
             )
             
             if 'Contents' in response:
-                logger.info("📦 Recent S3 uploads:")
+                logger.info("Recent S3 uploads:")
                 for obj in response['Contents'][:5]:
                     logger.info(f"  - {obj['Key']} | Size: {obj['Size']/1024:.2f} KB | Modified: {obj['LastModified']}")
                 
@@ -264,7 +264,7 @@ def main() -> None:
                 sample_obj = s3.get_object(Bucket=BUCKET, Key=sample_key)
                 sample_data = json.loads(sample_obj['Body'].read())
                 
-                logger.info(f"\n📄 Sample data from {sample_key}:")
+                logger.info(f"\nSample data from {sample_key}:")
                 logger.info(f"  - Case ID: {sample_data.get('case_id', 'N/A')}")
                 logger.info(f"  - Docket: {sample_data.get('docket_number', 'N/A')}")
                 logger.info(f"  - Term: {sample_data.get('term', 'N/A')}")
