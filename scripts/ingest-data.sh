@@ -4,6 +4,10 @@ set -euo pipefail
 # Set region from environment or default
 REGION="${AWS_REGION:-us-east-1}"
 
+# Set term range from environment or defaults
+START_TERM="${START_TERM:-1980}"
+END_TERM="${END_TERM:-2025}"
+
 # Dynamically retrieve values from CloudFormation
 echo "Retrieving CloudFormation outputs..."
 
@@ -46,6 +50,8 @@ echo "Retrieved configuration:"
 echo "   - Cluster: $CLUSTER"
 echo "   - Subnet: $SUBNET_ID"
 echo "   - Task Definition: $TASK_DEF_ARN"
+echo "   - Start Term: $START_TERM"
+echo "   - End Term: $END_TERM"
 
 # Use the task definition ARN from CloudFormation
 TASK_DEF="$TASK_DEF_ARN"
@@ -82,7 +88,9 @@ aws ecs run-task \
         "name": "IngestContainer",
         "environment": [
           { "name": "S3_BUCKET", "value": "scotustician" },
-          { "name": "RAW_PREFIX", "value": "raw/" }
+          { "name": "RAW_PREFIX", "value": "raw/" },
+          { "name": "START_TERM", "value": "'"$START_TERM"'" },
+          { "name": "END_TERM", "value": "'"$END_TERM"'" }
         ]
       }
     ]
