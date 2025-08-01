@@ -120,6 +120,65 @@ export class ScotusticianSharedStack extends cdk.Stack {
       new cdk.CfnOutput(this, 'SecurityGroupId', {
         value: instanceSG.securityGroupId,
       });
+    } else {
+      // Create ECS cluster with p2.xlarge instance when not using GPU
+      const instanceRole = new iam.Role(this, 'CpuInstanceRole', {
+        assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
+        ],
+      });
+
+      const instanceSG = new ec2.SecurityGroup(this, 'CpuInstanceSG', {
+        vpc: this.vpc,
+        allowAllOutbound: false,
+        description: 'ECS CPU instance SG',
+      });
+
+      // Allow HTTPS outbound for ECR/S3/API access
+      instanceSG.addEgressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(443),
+        'HTTPS for ECR/S3/API access'
+      );
+
+      // Allow PostgreSQL outbound for database access
+      instanceSG.addEgressRule(
+        ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
+        ec2.Port.tcp(5432),
+        'PostgreSQL database access'
+      );
+
+      const ami = ecs.EcsOptimizedImage.amazonLinux2().getImage(this).imageId;
+
+      const instance = new ec2.CfnInstance(this, 'CpuInstance', {
+        imageId: ami,
+        instanceType: 'p2.xlarge',
+        subnetId: this.vpc.publicSubnets[0].subnetId,
+        securityGroupIds: [instanceSG.securityGroupId],
+        iamInstanceProfile: new iam.CfnInstanceProfile(this, 'CpuInstanceProfile', {
+          roles: [instanceRole.roleName],
+        }).ref,
+        tags: [
+          { key: 'Name', value: 'ScotusticianCpu' },
+          { key: 'AutoStop', value: 'true' },
+        ],
+        userData: cdk.Fn.base64([
+          `#!/bin/bash`,
+          `echo "ECS_CLUSTER=${this.cluster.clusterName}" >> /etc/ecs/ecs.config`,
+          `systemctl enable --now ecs`,
+        ].join('\n')),
+      });
+
+      cdk.Tags.of(instance).add('AutoStop', 'true');
+
+      new cdk.CfnOutput(this, 'CpuInstanceId', {
+        value: instance.ref,
+      });
+
+      new cdk.CfnOutput(this, 'CpuSecurityGroupId', {
+        value: instanceSG.securityGroupId,
+      });
     }
 
     new cdk.CfnOutput(this, 'ClusterName', {
