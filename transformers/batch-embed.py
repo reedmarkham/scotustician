@@ -36,7 +36,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB")
 if not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASS, POSTGRES_DB]):
     raise EnvironmentError("Missing required Postgres environment variables")
 
-logger.info(f"🔐 Connecting to Postgres at {POSTGRES_HOST}")
+logger.info(f"Connecting to Postgres at {POSTGRES_HOST}")
 
 def get_db_connection():
     return psycopg2.connect(

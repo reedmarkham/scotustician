@@ -154,7 +154,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
 
       const instance = new ec2.CfnInstance(this, 'CpuInstance', {
         imageId: ami,
-        instanceType: 'p2.xlarge',
+        instanceType: 't3.xlarge',
         subnetId: this.vpc.publicSubnets[0].subnetId,
         securityGroupIds: [instanceSG.securityGroupId],
         iamInstanceProfile: new iam.CfnInstanceProfile(this, 'CpuInstanceProfile', {
