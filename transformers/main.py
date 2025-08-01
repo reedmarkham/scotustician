@@ -2,14 +2,11 @@ import os
 
 import psycopg2
 from helpers import (
-    extract_speaker_list,
     get_transcript_s3,
-    generate_case_embedding,
     generate_utterance_embeddings,
     extract_metadata_from_key,
     ensure_tables_exist,
-    insert_case_embedding_to_postgres,
-    insert_utterance_embeddings_to_postgres,
+    insert_utterance_embeddings_to_postgres
 )
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
@@ -27,20 +24,12 @@ def get_db_connection():
 
 def run(bucket: str, input_key: str):
     xml_string = get_transcript_s3(bucket, input_key)
-    speaker_list = extract_speaker_list(xml_string)
     meta = extract_metadata_from_key(input_key)
     
-    # Generate both case-level and utterance-level embeddings
-    embedding, full_text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
     utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, BATCH_SIZE)
     
     with get_db_connection() as conn:
         ensure_tables_exist(conn)
-        # Insert case-level embedding (for backward compatibility)
-        insert_case_embedding_to_postgres(
-            embedding, full_text, meta, input_key, conn, speaker_list
-        )
-        # Insert utterance-level embeddings
         insert_utterance_embeddings_to_postgres(
             utterances, meta, input_key, conn
         )

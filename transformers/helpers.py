@@ -15,22 +15,6 @@ logging.basicConfig(level=logging.INFO)
 s3 = boto3.client("s3")
 tokenizer = AutoTokenizer.from_pretrained(f"sentence-transformers/{os.environ.get('MODEL_NAME', 'all-MiniLM-L6-v2')}")
 
-def extract_speaker_list(xml_string: str) -> List[Dict[str, str]]:
-    try:
-        root = ET.fromstring(xml_string)
-        speakers = {}
-
-        for el in root.findall("utterance"):
-            speaker_id = el.attrib.get("speaker_id")
-            speaker_name = el.attrib.get("speaker", "Unknown")
-            if speaker_id:
-                speakers[speaker_id] = speaker_name
-
-        return [{"id": sid, "name": speakers[sid]} for sid in sorted(speakers)]
-    except Exception as e:
-        logger.warning(f"Could not extract speaker list from XML: {e}")
-        return []
-
 def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"Downloading transcript from s3://{bucket}/{key}")
     try:
@@ -183,40 +167,6 @@ def ensure_tables_exist(conn):
         conn.commit()
     
     logger.info("Tables exist.")
-
-def insert_case_embedding_to_postgres(
-    embedding: List[float],
-    full_text: str,
-    meta: Dict[str, str],
-    source_key: str,
-    conn,
-    speaker_list: List[Dict[str, str]]
-):
-    assert len(embedding) == 384, f"Embedding has invalid dimension: {len(embedding)}"
-
-    bucket_name = "scotustician"
-    xml_key = f"xml/{meta['oa_id'].replace('.json', '')}.xml"
-    xml_uri = f"s3://{bucket_name}/{xml_key}"
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO scotustician.transcript_embeddings 
-            (text, vector, case_name, term, case_id, oa_id, source_key, xml_uri, speaker_list)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            full_text,
-            embedding,
-            meta["case_name"],
-            meta["term"],
-            meta["case_id"],
-            meta["oa_id"],
-            source_key,
-            xml_uri,
-            Json(speaker_list)
-        ))
-        conn.commit()
-
-    logger.info(f"Inserted/Updated OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
 
 def insert_utterance_embeddings_to_postgres(
     utterances: List[Dict],
