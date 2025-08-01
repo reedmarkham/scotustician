@@ -59,6 +59,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
       vpc: this.vpc,
     });
 
+    // Only attempt to create GPU instance if useGpu context variable, which is set by the GitHub Actions workflow step that runs an AWS CLI command to assess the respective AWS account quota for GPU instances
     if (useGpu) {
       const instanceRole = new iam.Role(this, 'GpuInstanceRole', {
         assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
