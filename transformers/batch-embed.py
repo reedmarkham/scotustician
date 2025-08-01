@@ -6,9 +6,11 @@ from helpers import (
     extract_speaker_list,
     get_transcript_s3,
     generate_case_embedding,
+    generate_utterance_embeddings,
     extract_metadata_from_key,
     ensure_tables_exist,
-    insert_case_embedding_to_postgres
+    insert_case_embedding_to_postgres,
+    insert_utterance_embeddings_to_postgres
 )
 
 import boto3
@@ -55,14 +57,22 @@ def process_key(key: str):
         xml_string = get_transcript_s3(BUCKET, key)
         speaker_list = extract_speaker_list(xml_string)
         meta = extract_metadata_from_key(key)
+        
+        # Generate both case-level and utterance-level embeddings
         embedding, text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
+        utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, BATCH_SIZE)
         
         with get_db_connection() as conn:
+            # Insert case-level embedding (for backward compatibility)
             insert_case_embedding_to_postgres(
                 embedding, text, meta, key, conn, speaker_list
             )
+            # Insert utterance-level embeddings
+            insert_utterance_embeddings_to_postgres(
+                utterances, meta, key, conn
+            )
         
-        return f"✅ Processed: {key}"
+        return f"✅ Processed: {key} ({len(utterances)} utterances)"
     except Exception as e:
         return f"❌ Failed: {key} | {e}"
 
@@ -104,10 +114,10 @@ def main():
                 cursor.execute("""
                     SELECT 
                         case_id,
-                        docket_number,
+                        case_name,
                         term,
                         speaker_list,
-                        array_length(embedding, 1) as embedding_dim,
+                        array_length(vector, 1) as embedding_dim,
                         created_at
                     FROM scotustician.transcript_embeddings
                     ORDER BY created_at DESC
@@ -125,13 +135,41 @@ def main():
                 
                 # Verify embedding dimensions
                 cursor.execute("""
-                    SELECT DISTINCT array_length(embedding, 1) as dim, COUNT(*) as count
+                    SELECT DISTINCT array_length(vector, 1) as dim, COUNT(*) as count
                     FROM scotustician.transcript_embeddings
                     GROUP BY dim
                 """)
                 logger.info("🔢 Embedding dimensions:")
                 for row in cursor.fetchall():
                     logger.info(f"  - Dimension {row[0]}: {row[1]} embeddings")
+                
+                # Validate utterance embeddings
+                cursor.execute("SELECT COUNT(*) FROM scotustician.utterance_embeddings")
+                utterance_count = cursor.fetchone()[0]
+                logger.info(f"\n📈 Total utterance embeddings: {utterance_count}")
+                
+                # Get utterance stats by case
+                cursor.execute("""
+                    SELECT 
+                        case_id,
+                        COUNT(*) as utterance_count,
+                        COUNT(DISTINCT speaker_name) as speaker_count,
+                        AVG(word_count) as avg_words,
+                        MIN(utterance_index) as min_idx,
+                        MAX(utterance_index) as max_idx
+                    FROM scotustician.utterance_embeddings
+                    GROUP BY case_id
+                    ORDER BY case_id DESC
+                    LIMIT 5
+                """)
+                
+                logger.info("\n📄 Recent case utterance stats:")
+                for row in cursor.fetchall():
+                    logger.info(f"  - Case: {row[0]}")
+                    logger.info(f"    Utterances: {row[1]}")
+                    logger.info(f"    Speakers: {row[2]}")
+                    logger.info(f"    Avg words/utterance: {row[3]:.1f}")
+                    logger.info("")
                     
     except Exception as e:
         logger.error(f"Failed to validate database: {e}")

@@ -104,11 +104,59 @@ def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
 
     return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
 
+def generate_utterance_embeddings(
+    xml_string: str,
+    model_name: str,
+    batch_size: int
+) -> List[Dict]:
+    """Generate embeddings for individual utterances with metadata."""
+    logger.info(f"Loading model: {model_name}")
+    model = SentenceTransformer(model_name)
+
+    try:
+        root = ET.fromstring(xml_string)
+        utterances = []
+        texts_to_embed = []
+        
+        for idx, el in enumerate(root.findall("utterance")):
+            if el.text and len(el.text.strip().split()) > 3:
+                speaker_id = el.attrib.get('speaker_id', '')
+                speaker_name = el.attrib.get('speaker', 'Unknown')
+                text = el.text.strip()
+                full_text = f"{speaker_name}: {text}"
+                
+                utterances.append({
+                    'utterance_index': idx,
+                    'speaker_id': speaker_id,
+                    'speaker_name': speaker_name,
+                    'text': text,
+                    'full_text': full_text,
+                    'word_count': len(text.split())
+                })
+                texts_to_embed.append(full_text)
+
+        if not utterances:
+            raise ValueError("No valid utterances found to embed.")
+
+        logger.info(f"Generating embeddings for {len(utterances)} utterances.")
+        embeddings = model.encode(texts_to_embed, batch_size=batch_size, show_progress_bar=True)
+        
+        # Add embeddings to utterance data
+        for utt, emb in zip(utterances, embeddings):
+            utt['embedding'] = emb.tolist()
+            
+        return utterances
+
+    except Exception as e:
+        logger.error(f"Failed to generate utterance embeddings from XML: {e}")
+        raise
+
 def generate_case_embedding(
     xml_string: str,
     model_name: str,
     batch_size: int
 ) -> Tuple[List[float], str]:
+    """Legacy function that generates averaged case embedding."""
     logger.info(f"⚙️ Loading model: {model_name}")
     model = SentenceTransformer(model_name)
 
@@ -169,6 +217,30 @@ def ensure_tables_exist(conn):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scotustician.utterance_embeddings (
+                id SERIAL PRIMARY KEY,
+                case_id VARCHAR(255) NOT NULL,
+                oa_id VARCHAR(255) NOT NULL,
+                utterance_index INTEGER NOT NULL,
+                speaker_id VARCHAR(100),
+                speaker_name VARCHAR(255),
+                text TEXT NOT NULL,
+                vector vector(384) NOT NULL,
+                word_count INTEGER,
+                source_key VARCHAR(500),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(case_id, utterance_index)
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_utterance_case_id 
+            ON scotustician.utterance_embeddings(case_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_utterance_speaker 
+            ON scotustician.utterance_embeddings(speaker_name);
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS scotustician.raw_transcripts (
@@ -246,3 +318,43 @@ def insert_case_embedding_to_postgres(
         conn.commit()
 
     logger.info(f"📝 Inserted/Updated OA: case_id={meta['case_id']}, oa_id={meta['oa_id']}")
+
+def insert_utterance_embeddings_to_postgres(
+    utterances: List[Dict],
+    meta: Dict[str, str],
+    source_key: str,
+    conn
+):
+    """Insert utterance-level embeddings into the database."""
+    with conn.cursor() as cur:
+        for utt in utterances:
+            assert len(utt['embedding']) == 384, f"Embedding has invalid dimension: {len(utt['embedding'])}"
+            
+            cur.execute("""
+                INSERT INTO scotustician.utterance_embeddings 
+                (case_id, oa_id, utterance_index, speaker_id, speaker_name, 
+                 text, vector, word_count, source_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (case_id, utterance_index) 
+                DO UPDATE SET
+                    speaker_id = EXCLUDED.speaker_id,
+                    speaker_name = EXCLUDED.speaker_name,
+                    text = EXCLUDED.text,
+                    vector = EXCLUDED.vector,
+                    word_count = EXCLUDED.word_count,
+                    source_key = EXCLUDED.source_key
+            """, (
+                meta["case_id"],
+                meta["oa_id"],
+                utt['utterance_index'],
+                utt['speaker_id'],
+                utt['speaker_name'],
+                utt['text'],
+                utt['embedding'],
+                utt['word_count'],
+                source_key
+            ))
+        
+        conn.commit()
+    
+    logger.info(f"Inserted {len(utterances)} utterance embeddings for case_id={meta['case_id']}")
