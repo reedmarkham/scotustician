@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS scotustician.transcript_embeddings (
     id SERIAL PRIMARY KEY,
     text TEXT NOT NULL,
-    vector vector(384),
+    vector vector(4096),
     case_name VARCHAR(255),
     term VARCHAR(10),
     case_id VARCHAR(255) NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS scotustician.utterance_embeddings (
     speaker_id VARCHAR(100),
     speaker_name VARCHAR(255),
     text TEXT NOT NULL,
-    vector vector(384) NOT NULL,
+    vector vector(4096) NOT NULL,
     word_count INTEGER,
     source_key VARCHAR(500),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

@@ -11,8 +11,9 @@ from helpers import (
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
-MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
+MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
+MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model
 
 def get_db_connection():
     return psycopg2.connect(
@@ -26,7 +27,7 @@ def run(bucket: str, input_key: str):
     xml_string = get_transcript_s3(bucket, input_key)
     meta = extract_metadata_from_key(input_key)
     
-    utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, BATCH_SIZE)
+    utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
     
     with get_db_connection() as conn:
         ensure_tables_exist(conn)

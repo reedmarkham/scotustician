@@ -13,7 +13,9 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
-tokenizer = AutoTokenizer.from_pretrained(f"sentence-transformers/{os.environ.get('MODEL_NAME', 'all-MiniLM-L6-v2')}")
+MODEL_NAME_FOR_TOKENIZER = os.environ.get('MODEL_NAME', 'nvidia/NV-Embed-v2')
+# Use the model directly for tokenizer, as NV-Embed-v2 is not in sentence-transformers format
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME_FOR_TOKENIZER)
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"Downloading transcript from s3://{bucket}/{key}")
@@ -79,7 +81,7 @@ def get_transcript_s3(bucket: str, key: str) -> str:
 
         raise
 
-def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
+def truncate_to_tokens(text: str, max_tokens: int = 4096) -> str:
     tokens = tokenizer.encode(text, add_special_tokens=False)
     logger.info(f"Token count before truncation: {len(tokens)}")
 
@@ -91,6 +93,7 @@ def truncate_to_tokens(text: str, max_tokens: int = 384) -> str:
 def generate_utterance_embeddings(
     xml_string: str,
     model_name: str,
+    model_dimension: int,
     batch_size: int
 ) -> List[Dict]:
     """Generate embeddings for individual utterances with metadata."""
@@ -101,6 +104,7 @@ def generate_utterance_embeddings(
         root = ET.fromstring(xml_string)
         utterances = []
         texts_to_embed = []
+        char_offset = 0
         
         for idx, el in enumerate(root.findall("utterance")):
             if el.text and len(el.text.strip().split()) > 3:
@@ -109,15 +113,30 @@ def generate_utterance_embeddings(
                 text = el.text.strip()
                 full_text = f"{speaker_name}: {text}"
                 
+                # Get timing info if available
+                start_time = el.attrib.get('start_time_ms')
+                end_time = el.attrib.get('end_time_ms')
+                
+                # Calculate token count for the text
+                token_count = len(tokenizer.encode(text, add_special_tokens=False))
+                
                 utterances.append({
                     'utterance_index': idx,
                     'speaker_id': speaker_id,
                     'speaker_name': speaker_name,
                     'text': text,
                     'full_text': full_text,
-                    'word_count': len(text.split())
+                    'word_count': len(text.split()),
+                    'token_count': token_count,
+                    'char_start_offset': char_offset,
+                    'char_end_offset': char_offset + len(text),
+                    'start_time_ms': int(start_time) if start_time else None,
+                    'end_time_ms': int(end_time) if end_time else None,
+                    'embedding_model': model_name,
+                    'embedding_dimension': model_dimension
                 })
                 texts_to_embed.append(full_text)
+                char_offset += len(text) + 1  # +1 for space between utterances
 
         if not utterances:
             raise ValueError("No valid utterances found to embed.")
@@ -176,13 +195,16 @@ def insert_utterance_embeddings_to_postgres(
 ):
     with conn.cursor() as cur:
         for utt in utterances:
-            assert len(utt['embedding']) == 384, f"Embedding has invalid dimension: {len(utt['embedding'])}"
+            expected_dim = utt.get('embedding_dimension', 384)
+            assert len(utt['embedding']) == expected_dim, f"Embedding has invalid dimension: {len(utt['embedding'])}, expected {expected_dim}"
             
             cur.execute("""
                 INSERT INTO scotustician.utterance_embeddings 
                 (case_id, oa_id, utterance_index, speaker_id, speaker_name, 
-                 text, vector, word_count, source_key)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 text, vector, word_count, source_key, token_count,
+                 char_start_offset, char_end_offset, start_time_ms, end_time_ms,
+                 embedding_model, embedding_dimension)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (case_id, utterance_index) 
                 DO UPDATE SET
                     speaker_id = EXCLUDED.speaker_id,
@@ -190,7 +212,14 @@ def insert_utterance_embeddings_to_postgres(
                     text = EXCLUDED.text,
                     vector = EXCLUDED.vector,
                     word_count = EXCLUDED.word_count,
-                    source_key = EXCLUDED.source_key
+                    source_key = EXCLUDED.source_key,
+                    token_count = EXCLUDED.token_count,
+                    char_start_offset = EXCLUDED.char_start_offset,
+                    char_end_offset = EXCLUDED.char_end_offset,
+                    start_time_ms = EXCLUDED.start_time_ms,
+                    end_time_ms = EXCLUDED.end_time_ms,
+                    embedding_model = EXCLUDED.embedding_model,
+                    embedding_dimension = EXCLUDED.embedding_dimension
             """, (
                 meta["case_id"],
                 meta["oa_id"],
@@ -200,7 +229,14 @@ def insert_utterance_embeddings_to_postgres(
                 utt['text'],
                 utt['embedding'],
                 utt['word_count'],
-                source_key
+                source_key,
+                utt.get('token_count'),
+                utt.get('char_start_offset'),
+                utt.get('char_end_offset'),
+                utt.get('start_time_ms'),
+                utt.get('end_time_ms'),
+                utt.get('embedding_model'),
+                utt.get('embedding_dimension')
             ))
         
         conn.commit()

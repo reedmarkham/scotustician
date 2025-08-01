@@ -19,8 +19,9 @@ import psycopg2
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
 INDEX_NAME = os.getenv("INDEX_NAME", "oa-embeddings")
-MODEL_NAME = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 16))
+MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
+MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
 
 s3 = boto3.client("s3")
@@ -59,8 +60,8 @@ def process_key(key: str):
         meta = extract_metadata_from_key(key)
         
         # Generate both case-level and utterance-level embeddings
-        embedding, text = generate_case_embedding(xml_string, MODEL_NAME, BATCH_SIZE)
-        utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, BATCH_SIZE)
+        embedding, text = generate_case_embedding(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
+        utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
         
         with get_db_connection() as conn:
             # Insert case-level embedding (for backward compatibility)
