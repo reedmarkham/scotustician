@@ -78,7 +78,7 @@ def process_key(key: str):
 
 
 def main():
-    logger.info(f"🔍 Scanning s3://{BUCKET}/{PREFIX}")
+    logger.info(f"Scanning s3://{BUCKET}/{PREFIX}")
     keys = list(list_s3_keys(BUCKET, PREFIX))
     
     with get_db_connection() as conn:
@@ -97,18 +97,18 @@ def main():
             else:
                 failed_count += 1
 
-    logger.info("🎉 Batch embedding complete.")
-    logger.info(f"📊 Summary: Processed {processed_count}, Failed {failed_count}")
+    logger.info("Batch embedding complete.")
+    logger.info(f"Summary: Processed {processed_count}, Failed {failed_count}")
     
     # Print sample data for validation
-    logger.info("\n🔍 Database Validation:")
+    logger.info("\nDatabase Validation:")
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 # Count total embeddings
                 cursor.execute("SELECT COUNT(*) FROM scotustician.transcript_embeddings")
                 total_count = cursor.fetchone()[0]
-                logger.info(f"📈 Total embeddings in database: {total_count}")
+                logger.info(f"Total embeddings in database: {total_count}")
                 
                 # Get sample embeddings
                 cursor.execute("""
@@ -124,7 +124,7 @@ def main():
                     LIMIT 5
                 """)
                 
-                logger.info("\n📄 Recent embeddings:")
+                logger.info("\nRecent embeddings:")
                 for row in cursor.fetchall():
                     logger.info(f"  - Case: {row[1]} (Term {row[2]})")
                     logger.info(f"    ID: {row[0]}")
@@ -139,14 +139,14 @@ def main():
                     FROM scotustician.transcript_embeddings
                     GROUP BY dim
                 """)
-                logger.info("🔢 Embedding dimensions:")
+                logger.info("Embedding dimensions:")
                 for row in cursor.fetchall():
                     logger.info(f"  - Dimension {row[0]}: {row[1]} embeddings")
                 
                 # Validate utterance embeddings
                 cursor.execute("SELECT COUNT(*) FROM scotustician.utterance_embeddings")
                 utterance_count = cursor.fetchone()[0]
-                logger.info(f"\n📈 Total utterance embeddings: {utterance_count}")
+                logger.info(f"\nTotal utterance embeddings: {utterance_count}")
                 
                 # Get utterance stats by case
                 cursor.execute("""
@@ -163,7 +163,7 @@ def main():
                     LIMIT 5
                 """)
                 
-                logger.info("\n📄 Recent case utterance stats:")
+                logger.info("\nRecent case utterance stats:")
                 for row in cursor.fetchall():
                     logger.info(f"  - Case: {row[0]}")
                     logger.info(f"    Utterances: {row[1]}")
