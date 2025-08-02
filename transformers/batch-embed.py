@@ -18,7 +18,6 @@ import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
-INDEX_NAME = os.getenv("INDEX_NAME", "oa-embeddings")
 MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
 MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model

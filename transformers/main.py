@@ -1,6 +1,5 @@
 import os
 
-import psycopg2
 from helpers import (
     get_transcript_s3,
     generate_utterance_embeddings,
@@ -9,11 +8,12 @@ from helpers import (
     insert_utterance_embeddings_to_postgres
 )
 
+import psycopg2
+
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
-INDEX_NAME = os.getenv("INDEX_NAME", "scotus-oa-embeddings")
 MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
 MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
 
 def get_db_connection():
     return psycopg2.connect(

@@ -3,7 +3,6 @@ from typing import List, Dict
 import xml.etree.ElementTree as ET
 
 import boto3, botocore.exceptions
-from psycopg2.extras import Json
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
 
@@ -13,9 +12,8 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
-MODEL_NAME_FOR_TOKENIZER = os.environ.get('MODEL_NAME', 'nvidia/NV-Embed-v2')
-# Use the model directly for tokenizer, as NV-Embed-v2 is not in sentence-transformers format
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME_FOR_TOKENIZER)
+MODEL_NAME = os.environ.get('MODEL_NAME', 'nvidia/NV-Embed-v2')
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"Downloading transcript from s3://{bucket}/{key}")
