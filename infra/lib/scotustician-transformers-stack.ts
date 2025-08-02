@@ -26,6 +26,10 @@ export class ScotusticianTransformersStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
+    // Configure resources - optimized for transformer workloads
+    const taskCpu = 2048; // 2 vCPU for CPU-intensive transformers
+    const taskMemory = 8192; // 8 GB for model loading and batch processing
+
     const postgresHost = this.node.tryGetContext('postgresHost') || 'POSTGRES_HOST_FROM_CONTEXT';
     const postgresSecretName = this.node.tryGetContext('postgresSecretName') || 'scotustician-db-credentials';
 
@@ -66,14 +70,17 @@ export class ScotusticianTransformersStack extends Stack {
 
     // Received from CI/CD: based on AWS GPU quota decide whether to use GPU or CPU downstream
     if (useGpu) {
+      // GPU tasks need more memory but same CPU
+      const gpuTaskMemory = 6144; // Keep higher for GPU workloads
+      
       taskDefinition = new ecs.Ec2TaskDefinition(this, 'TransformersGpuTaskDef', {
         networkMode: ecs.NetworkMode.AWS_VPC,
       });
 
       container = taskDefinition.addContainer('TransformersGpuContainer', {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
-        memoryLimitMiB: 6144,
-        cpu: 512,
+        memoryLimitMiB: gpuTaskMemory,
+        cpu: taskCpu,
         gpuCount: 1,
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
@@ -93,8 +100,8 @@ export class ScotusticianTransformersStack extends Stack {
       });
     } else {
       const fargateTask = new ecs.FargateTaskDefinition(this, 'TransformersCpuTaskDef', {
-        cpu: 4096,
-        memoryLimitMiB: 8192,
+        cpu: taskCpu,
+        memoryLimitMiB: taskMemory,
       });
       taskDefinition = fargateTask;
 
@@ -109,7 +116,7 @@ export class ScotusticianTransformersStack extends Stack {
           RAW_PREFIX: 'raw/',
           MODEL_NAME: 'all-MiniLM-L6-v2',
           BATCH_SIZE: '16',
-          MAX_WORKERS: '2'
+          MAX_WORKERS: '4'  // Increased to utilize larger CPU instance
         },
         secrets: {
           POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),

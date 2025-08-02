@@ -6,7 +6,9 @@ import { Construct } from 'constructs';
 
 export class ScotusticianSharedStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
-  public readonly cluster: ecs.Cluster;
+  public readonly ingestCluster: ecs.Cluster;
+  public readonly transformersCpuCluster: ecs.Cluster;
+  public readonly transformersGpuCluster?: ecs.Cluster;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
@@ -55,9 +57,25 @@ export class ScotusticianSharedStack extends cdk.Stack {
       service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
     });
 
-    this.cluster = new ecs.Cluster(this, 'ScotusticianCluster', {
+    // Create separate clusters for different workloads
+    this.ingestCluster = new ecs.Cluster(this, 'IngestCluster', {
       vpc: this.vpc,
+      clusterName: 'scotustician-ingest',
     });
+
+    // Always create CPU cluster for transformers
+    this.transformersCpuCluster = new ecs.Cluster(this, 'TransformersCpuCluster', {
+      vpc: this.vpc,
+      clusterName: 'scotustician-transformers-cpu',
+    });
+
+    // Only create GPU cluster if GPU is available
+    if (useGpu) {
+      this.transformersGpuCluster = new ecs.Cluster(this, 'TransformersGpuCluster', {
+        vpc: this.vpc,
+        clusterName: 'scotustician-transformers-gpu',
+      });
+    }
 
     // Only attempt to create GPU instance if useGpu context variable, which is set by the GitHub Actions workflow step that runs an AWS CLI command to assess the respective AWS account quota for GPU instances
     if (useGpu) {
@@ -104,7 +122,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
         ],
         userData: cdk.Fn.base64([
           `#!/bin/bash`,
-          `echo "ECS_CLUSTER=${this.cluster.clusterName}" >> /etc/ecs/ecs.config`,
+          `echo "ECS_CLUSTER=${this.transformersGpuCluster!.clusterName}" >> /etc/ecs/ecs.config`,
           `echo "ECS_ENABLE_GPU_SUPPORT=true" >> /etc/ecs/ecs.config`,
           `systemctl enable --now ecs`,
         ].join('\n')),
@@ -118,73 +136,84 @@ export class ScotusticianSharedStack extends cdk.Stack {
         value: instance.ref,
       });
 
-      new cdk.CfnOutput(this, 'SecurityGroupId', {
-        value: instanceSG.securityGroupId,
-      });
-    } else {
-      // Create ECS cluster with p2.xlarge instance when not using GPU
-      const instanceRole = new iam.Role(this, 'CpuInstanceRole', {
-        assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-        managedPolicies: [
-          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
-        ],
-      });
-
-      const instanceSG = new ec2.SecurityGroup(this, 'CpuInstanceSG', {
-        vpc: this.vpc,
-        allowAllOutbound: false,
-        description: 'ECS CPU instance SG',
-      });
-
-      // Allow HTTPS outbound for ECR/S3/API access
-      instanceSG.addEgressRule(
-        ec2.Peer.anyIpv4(),
-        ec2.Port.tcp(443),
-        'HTTPS for ECR/S3/API access'
-      );
-
-      // Allow PostgreSQL outbound for database access
-      instanceSG.addEgressRule(
-        ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
-        ec2.Port.tcp(5432),
-        'PostgreSQL database access'
-      );
-
-      const ami = ecs.EcsOptimizedImage.amazonLinux2().getImage(this).imageId;
-
-      const instance = new ec2.CfnInstance(this, 'CpuInstance', {
-        imageId: ami,
-        instanceType: 't3.xlarge',
-        subnetId: this.vpc.publicSubnets[0].subnetId,
-        securityGroupIds: [instanceSG.securityGroupId],
-        iamInstanceProfile: new iam.CfnInstanceProfile(this, 'CpuInstanceProfile', {
-          roles: [instanceRole.roleName],
-        }).ref,
-        tags: [
-          { key: 'Name', value: 'ScotusticianCpu' },
-          { key: 'AutoStop', value: 'true' },
-        ],
-        userData: cdk.Fn.base64([
-          `#!/bin/bash`,
-          `echo "ECS_CLUSTER=${this.cluster.clusterName}" >> /etc/ecs/ecs.config`,
-          `systemctl enable --now ecs`,
-        ].join('\n')),
-      });
-
-      cdk.Tags.of(instance).add('AutoStop', 'true');
-
-      new cdk.CfnOutput(this, 'CpuInstanceId', {
-        value: instance.ref,
-      });
-
-      new cdk.CfnOutput(this, 'CpuSecurityGroupId', {
+      new cdk.CfnOutput(this, 'GpuSecurityGroupId', {
         value: instanceSG.securityGroupId,
       });
     }
 
-    new cdk.CfnOutput(this, 'ClusterName', {
-      value: this.cluster.clusterName,
+    // Always create CPU instance for transformer workloads
+    const cpuInstanceRole = new iam.Role(this, 'CpuInstanceRole', {
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
+      ],
     });
+
+    const cpuInstanceSG = new ec2.SecurityGroup(this, 'CpuInstanceSG', {
+      vpc: this.vpc,
+      allowAllOutbound: false,
+      description: 'ECS CPU instance SG for transformers',
+    });
+
+    // Allow HTTPS outbound for ECR/S3/API access
+    cpuInstanceSG.addEgressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(443),
+      'HTTPS for ECR/S3/API access'
+    );
+
+    // Allow PostgreSQL outbound for database access
+    cpuInstanceSG.addEgressRule(
+      ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
+      ec2.Port.tcp(5432),
+      'PostgreSQL database access'
+    );
+
+    const cpuAmi = ecs.EcsOptimizedImage.amazonLinux2().getImage(this).imageId;
+
+    // Use larger instance type for CPU-based transformer workloads
+    const cpuInstance = new ec2.CfnInstance(this, 'CpuInstance', {
+      imageId: cpuAmi,
+      instanceType: 'c5.2xlarge', // 8 vCPU, 16 GB RAM for better CPU performance
+      subnetId: this.vpc.publicSubnets[0].subnetId,
+      securityGroupIds: [cpuInstanceSG.securityGroupId],
+      iamInstanceProfile: new iam.CfnInstanceProfile(this, 'CpuInstanceProfile', {
+        roles: [cpuInstanceRole.roleName],
+      }).ref,
+      tags: [
+        { key: 'Name', value: 'ScotusticianTransformersCpu' },
+        { key: 'AutoStop', value: 'true' },
+      ],
+      userData: cdk.Fn.base64([
+        `#!/bin/bash`,
+        `echo "ECS_CLUSTER=${this.transformersCpuCluster.clusterName}" >> /etc/ecs/ecs.config`,
+        `systemctl enable --now ecs`,
+      ].join('\n')),
+    });
+
+    cdk.Tags.of(cpuInstance).add('AutoStop', 'true');
+
+    new cdk.CfnOutput(this, 'CpuInstanceId', {
+      value: cpuInstance.ref,
+    });
+
+    new cdk.CfnOutput(this, 'CpuSecurityGroupId', {
+      value: cpuInstanceSG.securityGroupId,
+    });
+
+    new cdk.CfnOutput(this, 'IngestClusterName', {
+      value: this.ingestCluster.clusterName,
+    });
+
+    new cdk.CfnOutput(this, 'TransformersCpuClusterName', {
+      value: this.transformersCpuCluster.clusterName,
+    });
+
+    if (useGpu) {
+      new cdk.CfnOutput(this, 'TransformersGpuClusterName', {
+        value: this.transformersGpuCluster!.clusterName,
+      });
+    }
 
     new cdk.CfnOutput(this, 'PublicSubnetId1', {
       value: this.vpc.publicSubnets[0].subnetId,

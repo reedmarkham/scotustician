@@ -15,13 +15,15 @@ const app = new cdk.App();
 const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', { env });
 
 const ingest = new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
-  cluster: shared.cluster,
+  cluster: shared.ingestCluster,
   vpc: shared.vpc,
   env,
 });
 
+const useGpu = app.node.tryGetContext('useGpu') === 'true';
+
 new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
-  cluster: shared.cluster,
+  cluster: useGpu && shared.transformersGpuCluster ? shared.transformersGpuCluster : shared.transformersCpuCluster,
   vpc: shared.vpc,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
   env,

@@ -26,6 +26,10 @@ export class ScotusticianIngestStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
+    // Configure resources - reduced for rate-limited ingestion
+    const taskCpu = 512; // Reduced from 4096
+    const taskMemory = 2048; // Reduced from 16384
+
     const bucket = s3.Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
@@ -33,8 +37,8 @@ export class ScotusticianIngestStack extends Stack {
     });
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
-      cpu: 4096,
-      memoryLimitMiB: 16384,
+      cpu: taskCpu,
+      memoryLimitMiB: taskMemory,
     });
 
     bucket.grantReadWrite(taskDefinition.taskRole);
@@ -43,15 +47,15 @@ export class ScotusticianIngestStack extends Stack {
     
     const container = taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
-      cpu: 4096,
-      memoryLimitMiB: 16384,
+      cpu: taskCpu,
+      memoryLimitMiB: taskMemory,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
         RAW_PREFIX: 'raw/',
         START_TERM: '1980',
         END_TERM: currentYear.toString(),
-        MAX_WORKERS: '8',
+        MAX_WORKERS: '2', // Reduced from 8 to align with lower resources
       },
     });
 
