@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # --- Environment Configuration ---
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
-START_TERM = int(os.getenv("START_TERM", 2024))
+START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
@@ -34,6 +34,26 @@ s3 = boto3.client('s3')
 # --- Helpers ---
 def oyez_api_case(term: int, docket_number: str) -> str:
     return f'https://api.oyez.org/cases/{term}/{docket_number}'
+
+def get_existing_oa_ids() -> set:
+    """Retrieve all existing oral argument IDs from S3."""
+    existing_ids = set()
+    paginator = s3.get_paginator('list_objects_v2')
+    
+    try:
+        for page in paginator.paginate(Bucket=BUCKET, Prefix='raw/oa/'):
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    # Extract OA ID from key format: raw/oa/{oa_id}_{timestamp}.json
+                    key = obj['Key']
+                    if key.startswith('raw/oa/') and '_' in key:
+                        oa_id = key.split('/')[-1].split('_')[0]
+                        existing_ids.add(oa_id)
+    except Exception as e:
+        logger.error(f"Failed to list existing OAs from S3: {e}")
+    
+    logger.info(f"Found {len(existing_ids)} existing oral arguments in S3")
+    return existing_ids
 
 @sleep_and_retry
 @limits(calls=1, period=1)
@@ -134,34 +154,59 @@ def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) ->
 
     return size_mb
 
-def process_case(term: int, case: dict, timestamp: str) -> list:
+def process_case(term: int, case: dict, timestamp: str, existing_oa_ids: set) -> tuple[list, dict]:
+    """Process a case and return tasks for new OAs and diff stats."""
     docket_number = case.get('docket_number')
+    stats = {"checked": 0, "existing": 0, "new": 0}
+    
     if not docket_number:
         logger.warning(f"Skipping case without docket number: {case}")
         log_junk_to_s3(term, case, context="missing_docket_number")
-        return []
+        return [], stats
 
     case_full = get_case_full(term, docket_number)
     if not case_full:
         logger.warning(f"No full case data for {docket_number} (term {term})")
-        return []
+        return [], stats
     if 'oral_argument_audio' not in case_full or not case_full['oral_argument_audio']:
         logger.info(f"No oral arguments for {docket_number} (term {term})")
-        return []
+        return [], stats
 
-    logger.info(f"Case {docket_number} (term {term}) has {len(case_full['oral_argument_audio'])} oral argument(s)")
+    oas = case_full['oral_argument_audio']
+    logger.info(f"Case {docket_number} (term {term}) has {len(oas)} oral argument(s)")
+    
+    tasks = []
+    for idx, oa in enumerate(oas):
+        stats["checked"] += 1
+        oa_id = oa.get('id')
+        
+        if oa_id and oa_id in existing_oa_ids:
+            logger.debug(f"Skipping existing OA: {oa_id} for case {docket_number}")
+            stats["existing"] += 1
+        else:
+            tasks.append((term, case, idx, oa, timestamp))
+            stats["new"] += 1
+            if oa_id:
+                logger.info(f"New OA to download: {oa_id} for case {docket_number}")
 
-    return [
-        (term, case, idx, oa, timestamp)
-        for idx, oa in enumerate(case_full['oral_argument_audio'])
-    ]
+    return tasks, stats
 
 # --- Main driver ---
 def main() -> None:
     logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
     start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # Get existing OA IDs for incremental loading
+    logger.info("Scanning S3 bucket for existing oral arguments...")
+    existing_oa_ids = get_existing_oa_ids()
+    
     tasks = []
+    diff_stats = {
+        "total_oas_checked": 0,
+        "existing_oas_skipped": 0,
+        "new_oas_to_download": 0
+    }
 
     cases_total = 0
     cases_with_docket = 0
@@ -196,7 +241,11 @@ def main() -> None:
                 cases_with_docket += 1
 
                 try:
-                    subtasks = process_case(term, case, timestamp)
+                    subtasks, case_stats = process_case(term, case, timestamp, existing_oa_ids)
+                    diff_stats["total_oas_checked"] += case_stats["checked"]
+                    diff_stats["existing_oas_skipped"] += case_stats["existing"]
+                    diff_stats["new_oas_to_download"] += case_stats["new"]
+                    
                     if subtasks:
                         cases_with_oa += 1
                     else:
@@ -209,7 +258,17 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Failed to process term {term}: {e}", exc_info=True)
 
-    logger.info(f"Dispatching {len(tasks)} oral argument tasks to thread pool...")
+    # Log diff summary before processing
+    logger.info("\n📊 Incremental Load Diff Summary:")
+    logger.info(f"  - Total OAs in API: {diff_stats['total_oas_checked']}")
+    logger.info(f"  - Existing OAs (skipped): {diff_stats['existing_oas_skipped']}")
+    logger.info(f"  - New OAs to download: {diff_stats['new_oas_to_download']}")
+    logger.info(f"  - Percentage new: {(diff_stats['new_oas_to_download'] / max(diff_stats['total_oas_checked'], 1) * 100):.1f}%")
+    
+    if len(tasks) == 0:
+        logger.info("\n✅ No new oral arguments to download. S3 bucket is up to date!")
+    else:
+        logger.info(f"\nDispatching {len(tasks)} new oral argument tasks to thread pool...")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(process_oa, *args) for args in tasks]
@@ -235,6 +294,11 @@ def main() -> None:
         "total_data_uploaded_mb": round(total_bytes, 2),
         "total_time_seconds": round(duration, 2),
         "dry_run": DRY_RUN,
+        "incremental_load": True,
+        "existing_oas_in_s3": len(existing_oa_ids),
+        "total_oas_checked": diff_stats["total_oas_checked"],
+        "existing_oas_skipped": diff_stats["existing_oas_skipped"],
+        "new_oas_downloaded": diff_stats["new_oas_to_download"],
     }
 
     logger.info("Ingestion Summary:")
@@ -244,7 +308,7 @@ def main() -> None:
     write_summary_to_s3(summary, timestamp)
     
     # Print sample data for validation
-    logger.info("\n🔍 Sample Data Validation:")
+    logger.info("\nSample Data Validation:")
     if total_uploaded > 0:
         try:
             # List recent uploads
