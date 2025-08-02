@@ -107,7 +107,7 @@ jobs:
           path: infra/cdk-outputs-shared.json
 
   deploy_ingest:
-    needs: [plan, deploy_shared]
+    needs: plan
     if: needs.plan.outputs.deploy_ingest == 'true'
     runs-on: ubuntu-latest
     env:
@@ -162,7 +162,7 @@ jobs:
           path: infra/cdk-outputs-ingest.json
 
   deploy_transformers:
-    needs: [plan, deploy_shared]
+    needs: plan
     if: needs.plan.outputs.deploy_transformers == 'true'
     runs-on: ubuntu-latest
     env:
