@@ -1,12 +1,10 @@
-# 🏛️ scotustician
+# scotustician
 
 **scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions.
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings using [Hugging Face transformer models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and storing them in a PostgreSQL database with pgvector extension.
-
-The current model generates 384-dimensional embeddings optimized for clustering and retrieval. Future work may experiment with alternative models to improve domain-specific accuracy or efficiency.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses NVIDIA's [NV-Embed-v2](https://huggingface.co/nvidia/NV-Embed-v2) model by default, which generates 4096-dimensional embeddings optimized for high-quality semantic retrieval. This model requires GPU acceleration for optimal performance.
 
 ---
 
@@ -27,7 +25,7 @@ scotustician/
 
 Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses [Hugging Face models](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) to generate embeddings. 
+2. Processed text from `ingest` on S3 is read by `transformers`, which uses the NVIDIA NV-Embed-v2 model to generate embeddings. 
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
@@ -152,6 +150,8 @@ This script will:
 - Store raw JSON files in S3 under `s3://scotustician/raw/oa/`
 - Print sample data for validation after completion
 
+**Note**: The infrastructure stack also creates a scheduled ECS task that automatically runs the ingest process at 10 AM UTC on Mondays and Thursdays. This ensures regular data updates without manual intervention.
+
 You can override default environment variables:
 ```bash
 aws ecs run-task ... --overrides '{
@@ -166,6 +166,12 @@ aws ecs run-task ... --overrides '{
 }'
 ```
 
+Default values:
+- `START_TERM`: 1980
+- `END_TERM`: Current year (dynamically set)
+- `S3_BUCKET`: scotustician
+- `RAW_PREFIX`: raw/
+
 ### Running Embedding Generation
 
 To generate embeddings from ingested data:
@@ -177,7 +183,7 @@ To generate embeddings from ingested data:
 This script will:
 - Detect whether GPU or CPU task definitions are available
 - Use appropriate security groups for RDS access
-- Read data from S3 and generate embeddings using Hugging Face models
+- Read data from S3 and generate embeddings using the NVIDIA NV-Embed-v2 model
 - Store embeddings in PostgreSQL with pgvector
 - Print database validation summary after completion
 
@@ -229,6 +235,15 @@ For detailed AWS CLI commands and troubleshooting, refer to:
 - All scripts respect the `AWS_REGION` environment variable (defaults to `us-east-1`)
 
 ---
+
+## Scheduled Tasks
+
+The infrastructure automatically creates scheduled ECS tasks:
+
+- **Ingest Task**: Runs at 10 AM UTC on Mondays and Thursdays to fetch new oral argument data from Oyez.org
+  - Configured with EventBridge rule in the IngestStack
+  - Uses the same task definition as manual runs
+  - Environment variables: START_TERM=1980, END_TERM=current year
 
 ## To-Do
 
