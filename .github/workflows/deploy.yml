@@ -107,8 +107,11 @@ jobs:
           path: infra/cdk-outputs-shared.json
 
   deploy_ingest:
-    needs: plan
-    if: needs.plan.outputs.deploy_ingest == 'true'
+    needs: [plan, deploy_shared]
+    if: |
+      always() && 
+      needs.plan.outputs.deploy_ingest == 'true' && 
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -138,6 +141,7 @@ jobs:
         with:
           name: cdk-outputs-shared
           path: infra
+        continue-on-error: true
 
       - name: Clean up existing changeset
         run: |
@@ -162,8 +166,11 @@ jobs:
           path: infra/cdk-outputs-ingest.json
 
   deploy_transformers:
-    needs: plan
-    if: needs.plan.outputs.deploy_transformers == 'true'
+    needs: [plan, deploy_shared]
+    if: |
+      always() && 
+      needs.plan.outputs.deploy_transformers == 'true' && 
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -193,6 +200,7 @@ jobs:
         with:
           name: cdk-outputs-shared
           path: infra
+        continue-on-error: true
 
       - name: Check GPU quota
         id: gpu_check
