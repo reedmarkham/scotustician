@@ -33,8 +33,8 @@ export class ScotusticianIngestStack extends Stack {
     });
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
-      cpu: 1024,
-      memoryLimitMiB: 4096,
+      cpu: 4096,
+      memoryLimitMiB: 16384,
     });
 
     bucket.grantReadWrite(taskDefinition.taskRole);
@@ -43,14 +43,15 @@ export class ScotusticianIngestStack extends Stack {
     
     const container = taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
-      cpu: 1024,
-      memoryLimitMiB: 4096,
+      cpu: 4096,
+      memoryLimitMiB: 16384,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
         RAW_PREFIX: 'raw/',
         START_TERM: '1980',
         END_TERM: currentYear.toString(),
+        MAX_WORKERS: '8',
       },
     });
 
@@ -109,11 +110,11 @@ export class ScotusticianIngestStack extends Stack {
 
     const scheduleRule = new events.Rule(this, 'IngestScheduleRule', {
       schedule: events.Schedule.cron({
-        minute: '0',
-        hour: '10',
+        minute: '00',
+        hour: '14',
         weekDay: 'MON,THU',
       }),
-      description: 'Schedule ingest task to run at 10 AM UTC on Mondays and Thursdays',
+      description: 'Schedule ingest task to run at 10 AM ET (14:00 UTC) on Mondays and Thursdays',
     });
 
     scheduleRule.addTarget(new targets.EcsTask({
@@ -133,7 +134,7 @@ export class ScotusticianIngestStack extends Stack {
 
     new CfnOutput(this, 'IngestTaskArn', {
       value: taskDefinition.taskDefinitionArn,
-      description: 'ARN of the ingest task definition for triggering transformers',
+      description: 'ARN of the ingest task definitions',
     });
   }
 }
