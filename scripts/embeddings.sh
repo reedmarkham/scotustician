@@ -111,18 +111,19 @@ aws ecs run-task \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
   --task-definition "$TASK_DEF" \
   --region "$REGION" \
-  --overrides '{
-    "containerOverrides": [
+  --overrides "{
+    \"containerOverrides\": [
       {
-        "name": "$CONTAINER_NAME",
-        "environment": [
-          { "name": "S3_BUCKET", "value": "scotustician" },
-          { "name": "RAW_PREFIX", "value": "raw/oa" },
-          { "name": "INDEX_NAME", "value": "oa-embeddings" },
-          { "name": "MODEL_NAME", "value": "all-MiniLM-L6-v2" },
-          { "name": "BATCH_SIZE", "value": "16" },
-          { "name": "MAX_WORKERS", "value": "2" }
-        ]
+        \"name\": \"${CONTAINER_NAME}\",
+        \"environment\": [
+          { \"name\": \"S3_BUCKET\", \"value\": \"scotustician\" },
+          { \"name\": \"RAW_PREFIX\", \"value\": \"raw/oa\" },
+          { \"name\": \"MODEL_NAME\", \"value\": \"nvidia/NV-Embed-v2\" },
+          { \"name\": \"MODEL_DIMENSION\", \"value\": \"4096\" },
+          { \"name\": \"BATCH_SIZE\", \"value\": \"4\" },
+          { \"name\": \"MAX_WORKERS\", \"value\": \"2\" }
+        ],
+        \"command\": [\"python\", \"batch-embed.py\"]
       }
     ]
-  }'
+  }"
