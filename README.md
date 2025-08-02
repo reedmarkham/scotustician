@@ -132,43 +132,37 @@ The `scripts/` directory contains the following utilities:
 
 | Script | Purpose |
 |--------|---------|
-| `ingest-data.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API |
-| `transform-data.sh` | Runs the transformer task to generate embeddings and store them in PostgreSQL |
-| `test-deployment.sh` | Validates the deployment and runs diagnostic checks |
+| `ingest.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
+| `embeddings.sh` | Runs the embedding generation task using GPU (NVIDIA NV-Embed-v2) or CPU (MiniLM-L6-v2) models with incremental processing |
+| `chunking.sql` | SQL queries for downstream processing of utterance embeddings with various chunking strategies |
 
 ### Running Data Ingestion
 
 To ingest oral argument data from the Oyez.org API:
 
 ```bash
-./scripts/ingest-data.sh
+./scripts/ingest.sh
 ```
 
 This script will:
 - Dynamically retrieve the ECS cluster name and task definition from CloudFormation
-- Launch a Fargate task to ingest data
+- Launch a Fargate task with incremental loading (skips existing files)
 - Store raw JSON files in S3 under `s3://scotustician/raw/oa/`
+- Display configuration and progress information
 - Print sample data for validation after completion
 
 **Note**: The infrastructure stack also creates a scheduled ECS task that automatically runs the ingest process at 10 AM UTC on Mondays and Thursdays. This ensures regular data updates without manual intervention.
 
-You can override default environment variables:
+You can override environment variables:
 ```bash
-aws ecs run-task ... --overrides '{
-  "containerOverrides": [{
-    "name": "IngestContainer",
-    "environment": [
-      {"name": "START_TERM", "value": "2023"},
-      {"name": "END_TERM", "value": "2024"},
-      {"name": "DRY_RUN", "value": "true"}
-    ]
-  }]
-}'
+START_TERM=2023 END_TERM=2024 DRY_RUN=true ./scripts/ingest.sh
 ```
 
-Default values:
+Environment variables with defaults:
 - `START_TERM`: 1980
-- `END_TERM`: Current year (dynamically set)
+- `END_TERM`: 2025
+- `MAX_WORKERS`: 2
+- `DRY_RUN`: false
 - `S3_BUCKET`: scotustician
 - `RAW_PREFIX`: raw/
 
@@ -177,32 +171,43 @@ Default values:
 To generate embeddings from ingested data:
 
 ```bash
-./scripts/transform-data.sh
+./scripts/embeddings.sh
 ```
 
 This script will:
-- Detect whether GPU or CPU task definitions are available
-- Use appropriate security groups for RDS access
-- Read data from S3 and generate embeddings using the NVIDIA NV-Embed-v2 model
-- Store embeddings in PostgreSQL with pgvector
-- Print database validation summary after completion
+- Automatically detect GPU (NVIDIA NV-Embed-v2, 4096-dim) or CPU (MiniLM-L6-v2, 384-dim) task definitions
+- Use appropriate security groups for RDS access in private subnets
+- Read XML transcript data from S3 and generate both case-level and utterance-level embeddings
+- Support incremental processing (skip existing embeddings by default)
+- Store embeddings in PostgreSQL with pgvector extension
+- Print detailed database validation summary after completion
 
-### Testing the Deployment
-
-To validate your deployment:
-
+You can override environment variables:
 ```bash
-./scripts/test-deployment.sh
+MODEL_NAME="all-MiniLM-L6-v2" BATCH_SIZE=16 INCREMENTAL=false ./scripts/embeddings.sh
 ```
 
-This comprehensive test script will:
-- Verify all CloudFormation stacks exist
-- Check ECS cluster status and running tasks
-- Validate VPC endpoints and networking configuration
-- Test S3 bucket accessibility
-- Verify database secret configuration
-- Run a dry-run test of the ingest task
-- Provide a summary of deployment health
+Environment variables with defaults:
+- `MODEL_NAME`: nvidia/NV-Embed-v2 (GPU) or all-MiniLM-L6-v2 (CPU)
+- `MODEL_DIMENSION`: 4096 (GPU) or 384 (CPU)
+- `BATCH_SIZE`: 4 (GPU) or 16 (CPU)
+- `MAX_WORKERS`: 2 (GPU) or 4 (CPU)
+- `INCREMENTAL`: true
+- `S3_BUCKET`: scotustician
+- `RAW_PREFIX`: raw/oa
+
+**Database Credentials**: All PostgreSQL connection details (host, username, password, database name) are automatically retrieved from AWS Secrets Manager (`scotustician-db-credentials`) by the ECS task definition.
+
+### SQL Utilities
+
+The `chunking.sql` file provides example queries for downstream processing of utterance embeddings:
+
+- **Fixed-size token windows**: Chunk transcripts into overlapping token windows (e.g., 512 tokens with 128 overlap)
+- **Speaker-based chunking**: Group consecutive utterances by the same speaker
+- **Time-based chunking**: Create temporal windows if timestamps are available
+- **Custom chunking**: Extract embeddings with metadata for algorithmic processing
+
+These queries are useful for building semantic search, clustering, and other downstream applications that require different granularities of text representation.
 
 ### Monitoring Task Execution
 
