@@ -39,13 +39,18 @@ export class ScotusticianIngestStack extends Stack {
 
     bucket.grantReadWrite(taskDefinition.taskRole);
 
+    const currentYear = new Date().getFullYear();
+    
     const container = taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
       cpu: 1024,
       memoryLimitMiB: 4096,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
-        BUCKET_NAME: bucket.bucketName,
+        S3_BUCKET: bucket.bucketName,
+        RAW_PREFIX: 'raw/',
+        START_TERM: '1980',
+        END_TERM: currentYear.toString(),
       },
     });
 
