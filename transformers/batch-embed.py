@@ -7,6 +7,7 @@ from helpers import (
     get_transcript_s3,
     generate_case_embedding,
     generate_utterance_embeddings,
+    generate_utterance_embeddings_incremental,
     extract_metadata_from_key,
     ensure_tables_exist,
     insert_case_embedding_to_postgres,
@@ -22,6 +23,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
 MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
+INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
 
 s3 = boto3.client("s3")
 logger = logging.getLogger(__name__)
@@ -58,27 +60,47 @@ def process_key(key: str):
         speaker_list = extract_speaker_list(xml_string)
         meta = extract_metadata_from_key(key)
         
-        # Generate both case-level and utterance-level embeddings
-        embedding, text = generate_case_embedding(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
-        utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
-        
         with get_db_connection() as conn:
-            # Insert case-level embedding (for backward compatibility)
+            # Generate utterance-level embeddings (incremental or full)
+            if INCREMENTAL:
+                utterances = generate_utterance_embeddings_incremental(
+                    xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, 
+                    meta["case_id"], conn
+                )
+                skipped_count = 0
+                # Count how many utterances already existed by checking XML
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(xml_string)
+                total_utterances = len([el for el in root.findall("utterance") 
+                                      if el.text and len(el.text.strip().split()) > 3])
+                skipped_count = total_utterances - len(utterances)
+                status_msg = f"✅ Processed: {key} ({len(utterances)} new, {skipped_count} existing utterances)"
+            else:
+                utterances = generate_utterance_embeddings(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
+                status_msg = f"✅ Processed: {key} ({len(utterances)} utterances - full regeneration)"
+            
+            # Generate case-level embedding (for backward compatibility)
+            embedding, text = generate_case_embedding(xml_string, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
+            
+            # Insert case-level embedding
             insert_case_embedding_to_postgres(
                 embedding, text, meta, key, conn, speaker_list
             )
-            # Insert utterance-level embeddings
-            insert_utterance_embeddings_to_postgres(
-                utterances, meta, key, conn
-            )
+            
+            # Insert utterance-level embeddings (only if there are new ones)
+            if utterances:
+                insert_utterance_embeddings_to_postgres(
+                    utterances, meta, key, conn
+                )
         
-        return f"✅ Processed: {key} ({len(utterances)} utterances)"
+        return status_msg
     except Exception as e:
         return f"❌ Failed: {key} | {e}"
 
 
 def main():
     logger.info(f"Scanning s3://{BUCKET}/{PREFIX}")
+    logger.info(f"Incremental mode: {'enabled' if INCREMENTAL else 'disabled'}")
     keys = list(list_s3_keys(BUCKET, PREFIX))
     
     with get_db_connection() as conn:

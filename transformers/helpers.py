@@ -152,6 +152,90 @@ def generate_utterance_embeddings(
         logger.error(f"Failed to generate utterance embeddings from XML: {e}")
         raise
 
+def generate_utterance_embeddings_incremental(
+    xml_string: str,
+    model_name: str,
+    model_dimension: int,
+    batch_size: int,
+    case_id: str,
+    conn
+) -> List[Dict]:
+    """Generate embeddings incrementally, skipping already processed utterances."""
+    # Get existing embeddings for this case/model combination
+    existing_embeddings = get_existing_embeddings(case_id, model_name, conn)
+    
+    logger.info(f"Loading model: {model_name}")
+    model = SentenceTransformer(model_name)
+
+    try:
+        root = ET.fromstring(xml_string)
+        utterances_to_process = []
+        texts_to_embed = []
+        char_offset = 0
+        
+        for idx, el in enumerate(root.findall("utterance")):
+            if el.text and len(el.text.strip().split()) > 3:
+                speaker_id = el.attrib.get('speaker_id', '')
+                speaker_name = el.attrib.get('speaker', 'Unknown')
+                text = el.text.strip()
+                
+                # Check if this utterance already has embeddings
+                if idx in existing_embeddings:
+                    existing = existing_embeddings[idx]
+                    # Verify text hasn't changed
+                    if existing['text'] == text:
+                        logger.debug(f"Skipping utterance {idx} - already has embeddings")
+                        char_offset += len(text) + 1
+                        continue
+                    else:
+                        logger.warning(f"Utterance {idx} text has changed, will re-generate embedding")
+                
+                full_text = f"{speaker_name}: {text}"
+                
+                # Get timing info if available
+                start_time = el.attrib.get('start_time_ms')
+                end_time = el.attrib.get('end_time_ms')
+                
+                # Calculate token count for the text
+                token_count = len(tokenizer.encode(text, add_special_tokens=False))
+                
+                utterance_data = {
+                    'utterance_index': idx,
+                    'speaker_id': speaker_id,
+                    'speaker_name': speaker_name,
+                    'text': text,
+                    'full_text': full_text,
+                    'word_count': len(text.split()),
+                    'token_count': token_count,
+                    'char_start_offset': char_offset,
+                    'char_end_offset': char_offset + len(text),
+                    'start_time_ms': int(start_time) if start_time else None,
+                    'end_time_ms': int(end_time) if end_time else None,
+                    'embedding_model': model_name,
+                    'embedding_dimension': model_dimension
+                }
+                
+                utterances_to_process.append(utterance_data)
+                texts_to_embed.append(full_text)
+                char_offset += len(text) + 1
+
+        if not utterances_to_process:
+            logger.info("No new utterances to process - all embeddings already exist")
+            return []
+
+        logger.info(f"Generating embeddings for {len(utterances_to_process)} new utterances (skipped {len(existing_embeddings)} existing)")
+        embeddings = model.encode(texts_to_embed, batch_size=batch_size, show_progress_bar=True)
+        
+        # Add embeddings to utterance data
+        for utt, emb in zip(utterances_to_process, embeddings):
+            utt['embedding'] = emb.tolist()
+            
+        return utterances_to_process
+
+    except Exception as e:
+        logger.error(f"Failed to generate utterance embeddings from XML: {e}")
+        raise
+
 def extract_metadata_from_key(key: str) -> Dict[str, str]:
     filename = key.split("/")[-1].replace(".json", "")
     oa_id = filename + ".json"
@@ -184,6 +268,39 @@ def ensure_tables_exist(conn):
         conn.commit()
     
     logger.info("Tables exist.")
+
+def get_existing_embeddings(case_id: str, model_name: str, conn) -> Dict[int, Dict]:
+    """Query existing embeddings for a case and model combination."""
+    logger.info(f"Checking existing embeddings for case_id={case_id}, model={model_name}")
+    
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT utterance_index, speaker_id, speaker_name, text, word_count,
+                   token_count, char_start_offset, char_end_offset, 
+                   start_time_ms, end_time_ms, embedding_dimension
+            FROM scotustician.utterance_embeddings 
+            WHERE case_id = %s AND embedding_model = %s
+            ORDER BY utterance_index
+        """, (case_id, model_name))
+        
+        existing = {}
+        for row in cur.fetchall():
+            existing[row[0]] = {
+                'utterance_index': row[0],
+                'speaker_id': row[1],
+                'speaker_name': row[2],
+                'text': row[3],
+                'word_count': row[4],
+                'token_count': row[5],
+                'char_start_offset': row[6],
+                'char_end_offset': row[7],
+                'start_time_ms': row[8],
+                'end_time_ms': row[9],
+                'embedding_dimension': row[10]
+            }
+    
+    logger.info(f"Found {len(existing)} existing embeddings for this case/model combination")
+    return existing
 
 def insert_utterance_embeddings_to_postgres(
     utterances: List[Dict],
