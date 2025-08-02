@@ -109,11 +109,11 @@ export class ScotusticianIngestStack extends Stack {
 
     const scheduleRule = new events.Rule(this, 'IngestScheduleRule', {
       schedule: events.Schedule.cron({
-        minute: '0',
-        hour: '10',
+        minute: '00',
+        hour: '14',
         weekDay: 'MON,THU',
       }),
-      description: 'Schedule ingest task to run at 10 AM UTC on Mondays and Thursdays',
+      description: 'Schedule ingest task to run at 10 AM ET (14:00 UTC) on Mondays and Thursdays',
     });
 
     scheduleRule.addTarget(new targets.EcsTask({
@@ -133,7 +133,7 @@ export class ScotusticianIngestStack extends Stack {
 
     new CfnOutput(this, 'IngestTaskArn', {
       value: taskDefinition.taskDefinitionArn,
-      description: 'ARN of the ingest task definition for triggering transformers',
+      description: 'ARN of the ingest task definitions',
     });
   }
 }
