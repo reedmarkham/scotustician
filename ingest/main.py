@@ -1,14 +1,9 @@
-# Standard library imports
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import time
 
-# Third-party libraries
-from tqdm import tqdm
-
-# Local imports
 from helpers import (
     get_existing_oa_ids,
     get_cases_by_term,
@@ -20,23 +15,21 @@ from helpers import (
     BUCKET
 )
 
-# --- Logging ---
+from tqdm import tqdm
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Environment Configuration ---
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
-# --- Main driver ---
 def main() -> None:
     logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
     start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
-    # Get existing OA IDs for incremental loading
     logger.info("Scanning S3 bucket for existing oral arguments...")
     existing_oa_ids = get_existing_oa_ids()
     
@@ -97,7 +90,6 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Failed to process term {term}: {e}", exc_info=True)
 
-    # Log diff summary before processing
     logger.info("\nIncremental Load Diff Summary:")
     logger.info(f"  - Total OAs in API: {diff_stats['total_oas_checked']}")
     logger.info(f"  - Existing OAs (skipped): {diff_stats['existing_oas_skipped']}")
@@ -146,9 +138,7 @@ def main() -> None:
 
     write_summary_to_s3(summary, timestamp)
     
-    # Print sample data for validation
     print_sample_data_validation(total_uploaded)
-
 
 if __name__ == "__main__":
     main()
