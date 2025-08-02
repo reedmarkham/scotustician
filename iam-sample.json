@@ -166,7 +166,8 @@
 			],
 			"Resource": [
 				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
-				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*"
+				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*",
+				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersGpuTaskDef*"
 			]
 		},
 		{
