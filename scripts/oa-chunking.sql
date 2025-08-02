@@ -1,6 +1,6 @@
--- Example queries for downstream case embedding generation using utterance embeddings
+-- Example queries for downstream OA embedding generation using utterance embeddings
 
--- 1. Get all utterance embeddings for a case to generate case embedding
+-- 1. Get all utterance embeddings for an OA to generate OA embedding
 SELECT 
     utterance_index,
     speaker_name,
