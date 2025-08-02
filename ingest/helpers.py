@@ -1,4 +1,3 @@
-# Standard library imports
 import os
 import json
 import logging
@@ -6,29 +5,23 @@ from typing import Any, Optional
 import time
 import uuid
 
-# Third-party libraries
 from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
 import boto3
 
-# --- Logging ---
 logger = logging.getLogger(__name__)
 
-# --- Environment Configuration ---
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
-# --- Constants ---
 OYEZ_CASE_SUMMARY = 'https://api.oyez.org/cases?per_page=0'
 OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
 s3 = boto3.client('s3')
 
-# --- URL Helpers ---
 def oyez_api_case(term: int, docket_number: str) -> str:
     return f'https://api.oyez.org/cases/{term}/{docket_number}'
 
-# --- S3 Helpers ---
 def get_existing_oa_ids() -> set:
     """Retrieve all existing oral argument IDs from S3."""
     existing_ids = set()
@@ -77,7 +70,7 @@ def write_summary_to_s3(summary: dict, timestamp: str):
     except Exception as e:
         logger.error(f"Failed to upload summary to S3: {e}")
 
-# --- Request Helpers ---
+# Make sure this is the rate limit for the Oyez API
 @sleep_and_retry
 @limits(calls=1, period=1)
 def _limited_request(url: str) -> Optional[dict]:
@@ -101,7 +94,6 @@ def request(url: str) -> Optional[dict]:
         raise Exception(f"Failed to retrieve {url}")
     return result
 
-# --- Data functions ---
 def get_cases_by_term(term: int) -> list:
     response = request(OYEZ_CASES_TERM_PREFIX + str(term))
     if not isinstance(response, list):
@@ -187,8 +179,7 @@ def process_case(term: int, case: dict, timestamp: str, existing_oa_ids: set) ->
     return tasks, stats
 
 def print_sample_data_validation(total_uploaded: int):
-    """Print sample data for validation."""
-    logger.info("\n🔍 Sample Data Validation:")
+    logger.info("\nSample Data Validation:")
     if total_uploaded > 0:
         try:
             # List recent uploads
