@@ -30,7 +30,6 @@ export class ScotusticianTransformersStack extends Stack {
     const taskCpu = 2048; // 2 vCPU for CPU-intensive transformers
     const taskMemory = 8192; // 8 GB for model loading and batch processing
 
-    const postgresHost = this.node.tryGetContext('postgresHost') || 'POSTGRES_HOST_FROM_CONTEXT';
     const postgresSecretName = this.node.tryGetContext('postgresSecretName') || 'scotustician-db-credentials';
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
@@ -84,17 +83,19 @@ export class ScotusticianTransformersStack extends Stack {
         gpuCount: 1,
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          POSTGRES_HOST: postgresHost,
-          POSTGRES_USER: 'dbuser',
-          POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
-          RAW_PREFIX: 'raw/',
-          MODEL_NAME: 'all-MiniLM-L6-v2',
-          BATCH_SIZE: '16',
-          MAX_WORKERS: '1'
+          RAW_PREFIX: 'raw/oa',
+          MODEL_NAME: 'nvidia/NV-Embed-v2',
+          MODEL_DIMENSION: '4096',
+          BATCH_SIZE: '4',
+          MAX_WORKERS: '2',
+          INCREMENTAL: 'true'
         },
         secrets: {
+          POSTGRES_HOST: ecs.Secret.fromSecretsManager(postgresSecret, 'host'),
+          POSTGRES_USER: ecs.Secret.fromSecretsManager(postgresSecret, 'username'),
           POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
+          POSTGRES_DB: ecs.Secret.fromSecretsManager(postgresSecret, 'dbname'),
         },
         command: ['python', 'batch-embed.py'],
       });
@@ -109,17 +110,19 @@ export class ScotusticianTransformersStack extends Stack {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'transformers' }),
         environment: {
-          POSTGRES_HOST: postgresHost,
-          POSTGRES_USER: 'dbuser',
-          POSTGRES_DB: 'scotustician',
           S3_BUCKET: 'scotustician',
-          RAW_PREFIX: 'raw/',
+          RAW_PREFIX: 'raw/oa',
           MODEL_NAME: 'all-MiniLM-L6-v2',
+          MODEL_DIMENSION: '384',
           BATCH_SIZE: '16',
-          MAX_WORKERS: '4'  // Increased to utilize larger CPU instance
+          MAX_WORKERS: '4',
+          INCREMENTAL: 'true'
         },
         secrets: {
+          POSTGRES_HOST: ecs.Secret.fromSecretsManager(postgresSecret, 'host'),
+          POSTGRES_USER: ecs.Secret.fromSecretsManager(postgresSecret, 'username'),
           POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
+          POSTGRES_DB: ecs.Secret.fromSecretsManager(postgresSecret, 'dbname'),
         },
         command: ['python', 'batch-embed.py'],
       });

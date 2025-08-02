@@ -1,8 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set region from environment or default
+# Environment Variables with Defaults
 REGION="${AWS_REGION:-us-east-1}"
+S3_BUCKET="${S3_BUCKET:-scotustician}"
+RAW_PREFIX="${RAW_PREFIX:-raw/oa}"
+MODEL_NAME="${MODEL_NAME:-nvidia/NV-Embed-v2}"
+MODEL_DIMENSION="${MODEL_DIMENSION:-4096}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
+MAX_WORKERS="${MAX_WORKERS:-2}"
+INCREMENTAL="${INCREMENTAL:-true}"
+
+# Display configuration
+echo "=== Embeddings Configuration ==="
+echo "Region: $REGION"
+echo "S3 Bucket: $S3_BUCKET"
+echo "Raw Prefix: $RAW_PREFIX"
+echo "Model: $MODEL_NAME (dim: $MODEL_DIMENSION)"
+echo "Batch Size: $BATCH_SIZE"
+echo "Max Workers: $MAX_WORKERS"
+echo "Incremental Mode: $INCREMENTAL"
+echo "================================"
 
 # Dynamically retrieve values from CloudFormation
 echo "Retrieving CloudFormation outputs..."
@@ -38,6 +56,8 @@ if [[ -z "$SUBNET_ID" || "$SUBNET_ID" == "None" ]]; then
   echo "ERROR: Failed to retrieve subnet ID from CloudFormation"
   exit 1
 fi
+
+# PostgreSQL credentials are now handled via Secrets Manager in the ECS task definition
 
 # Get task definition ARN (try GPU first, then CPU)
 TASK_DEF_ARN=$(aws cloudformation describe-stacks \
@@ -104,6 +124,7 @@ if [[ -z "$SG_ID" || "$SG_ID" == "None" ]]; then
 fi
 
 echo "Launching text embeddings task: $TASK_DEF in cluster: $CLUSTER"
+echo "Mode: $([ "$INCREMENTAL" == "true" ] && echo "INCREMENTAL" || echo "FULL REGENERATION")"
 
 aws ecs run-task \
   --cluster "$CLUSTER" \
@@ -116,12 +137,13 @@ aws ecs run-task \
       {
         \"name\": \"${CONTAINER_NAME}\",
         \"environment\": [
-          { \"name\": \"S3_BUCKET\", \"value\": \"scotustician\" },
-          { \"name\": \"RAW_PREFIX\", \"value\": \"raw/oa\" },
-          { \"name\": \"MODEL_NAME\", \"value\": \"nvidia/NV-Embed-v2\" },
-          { \"name\": \"MODEL_DIMENSION\", \"value\": \"4096\" },
-          { \"name\": \"BATCH_SIZE\", \"value\": \"4\" },
-          { \"name\": \"MAX_WORKERS\", \"value\": \"2\" }
+          { \"name\": \"S3_BUCKET\", \"value\": \"$S3_BUCKET\" },
+          { \"name\": \"RAW_PREFIX\", \"value\": \"$RAW_PREFIX\" },
+          { \"name\": \"MODEL_NAME\", \"value\": \"$MODEL_NAME\" },
+          { \"name\": \"MODEL_DIMENSION\", \"value\": \"$MODEL_DIMENSION\" },
+          { \"name\": \"BATCH_SIZE\", \"value\": \"$BATCH_SIZE\" },
+          { \"name\": \"MAX_WORKERS\", \"value\": \"$MAX_WORKERS\" },
+          { \"name\": \"INCREMENTAL\", \"value\": \"$INCREMENTAL\" }
         ],
         \"command\": [\"python\", \"batch-embed.py\"]
       }
