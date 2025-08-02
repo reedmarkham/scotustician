@@ -33,8 +33,8 @@ export class ScotusticianIngestStack extends Stack {
     });
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
-      cpu: 1024,
-      memoryLimitMiB: 4096,
+      cpu: 4096,
+      memoryLimitMiB: 16384,
     });
 
     bucket.grantReadWrite(taskDefinition.taskRole);
@@ -43,14 +43,15 @@ export class ScotusticianIngestStack extends Stack {
     
     const container = taskDefinition.addContainer('IngestContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
-      cpu: 1024,
-      memoryLimitMiB: 4096,
+      cpu: 4096,
+      memoryLimitMiB: 16384,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
         RAW_PREFIX: 'raw/',
         START_TERM: '1980',
         END_TERM: currentYear.toString(),
+        MAX_WORKERS: '8',
       },
     });
 
