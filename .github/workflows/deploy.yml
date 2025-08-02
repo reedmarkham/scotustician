@@ -107,7 +107,7 @@ jobs:
           path: infra/cdk-outputs-shared.json
 
   deploy_ingest:
-    needs: plan
+    needs: [plan, deploy_shared]
     if: needs.plan.outputs.deploy_ingest == 'true'
     runs-on: ubuntu-latest
     env:
@@ -133,8 +133,7 @@ jobs:
 
       - run: cd infra && npm ci
 
-      - name: Download shared outputs if available
-        continue-on-error: true
+      - name: Download shared outputs
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
@@ -163,7 +162,7 @@ jobs:
           path: infra/cdk-outputs-ingest.json
 
   deploy_transformers:
-    needs: plan
+    needs: [plan, deploy_shared]
     if: needs.plan.outputs.deploy_transformers == 'true'
     runs-on: ubuntu-latest
     env:
@@ -189,8 +188,7 @@ jobs:
 
       - run: cd infra && npm ci
 
-      - name: Download shared outputs if available
-        continue-on-error: true
+      - name: Download shared outputs
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
