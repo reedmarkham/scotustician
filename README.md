@@ -4,7 +4,7 @@
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses NVIDIA's [NV-Embed-v2](https://huggingface.co/nvidia/NV-Embed-v2) model by default, which generates 4096-dimensional embeddings optimized for high-quality semantic retrieval. This model requires GPU acceleration for optimal performance.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) model by default, which generates 1024-dimensional embeddings (configurable from 32 to 1024) optimized for semantic retrieval. The embeddings are limited to a maximum of 2000 dimensions to ensure compatibility with pgvector.
 
 ---
 
@@ -25,7 +25,7 @@ scotustician/
 
 Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses the NVIDIA NV-Embed-v2 model to generate embeddings. 
+2. Processed text from `ingest` on S3 is read by `transformers`, which uses the Qwen3-Embedding-0.6B model to generate embeddings. 
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
@@ -175,7 +175,7 @@ To generate embeddings from ingested data:
 ```
 
 This script will:
-- Automatically detect GPU (NVIDIA NV-Embed-v2, 4096-dim) or CPU (MiniLM-L6-v2, 384-dim) task definitions
+- Automatically detect GPU or CPU task definitions using Qwen3-Embedding-0.6B (1024-dim by default)
 - Use appropriate security groups for RDS access in private subnets
 - Read XML transcript data from S3 and generate both case-level and utterance-level embeddings
 - Support incremental processing (skip existing embeddings by default)
@@ -188,8 +188,8 @@ MODEL_NAME="all-MiniLM-L6-v2" BATCH_SIZE=16 INCREMENTAL=false ./scripts/embeddin
 ```
 
 Environment variables with defaults:
-- `MODEL_NAME`: nvidia/NV-Embed-v2 (GPU) or all-MiniLM-L6-v2 (CPU)
-- `MODEL_DIMENSION`: 4096 (GPU) or 384 (CPU)
+- `MODEL_NAME`: Qwen/Qwen3-Embedding-0.6B (supports both GPU and CPU)
+- `MODEL_DIMENSION`: 1024 (configurable from 32 to 1024, max 2000 for pgvector compatibility)
 - `BATCH_SIZE`: 4 (GPU) or 16 (CPU)
 - `MAX_WORKERS`: 2 (GPU) or 4 (CPU)
 - `INCREMENTAL`: true

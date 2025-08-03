@@ -12,9 +12,13 @@ from helpers import (
 import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
-MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
-MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
+MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
+
+# Validate model dimension for pgvector compatibility
+if MODEL_DIMENSION > 2000:
+    raise ValueError(f"Model dimension {MODEL_DIMENSION} exceeds pgvector maximum of 2000. Please set MODEL_DIMENSION to 2000 or less.")
 
 def get_db_connection():
     return psycopg2.connect(

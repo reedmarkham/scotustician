@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
-MODEL_NAME = os.environ.get('MODEL_NAME', 'nvidia/NV-Embed-v2')
+MODEL_NAME = os.environ.get('MODEL_NAME', 'Qwen/Qwen3-Embedding-0.6B')
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 def get_transcript_s3(bucket: str, key: str) -> str:
@@ -95,6 +95,10 @@ def generate_utterance_embeddings(
     batch_size: int
 ) -> List[Dict]:
     """Generate embeddings for individual utterances with metadata."""
+    # Validate dimension for pgvector compatibility
+    if model_dimension > 2000:
+        raise ValueError(f"Model dimension {model_dimension} exceeds pgvector maximum of 2000")
+    
     logger.info(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name)
 
@@ -161,6 +165,10 @@ def generate_utterance_embeddings_incremental(
     conn
 ) -> List[Dict]:
     """Generate embeddings incrementally, skipping already processed utterances."""
+    # Validate dimension for pgvector compatibility
+    if model_dimension > 2000:
+        raise ValueError(f"Model dimension {model_dimension} exceeds pgvector maximum of 2000")
+    
     # Get existing embeddings for this case/model combination
     existing_embeddings = get_existing_embeddings(case_id, model_name, conn)
     
