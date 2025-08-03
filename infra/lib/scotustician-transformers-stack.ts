@@ -97,7 +97,7 @@ export class ScotusticianTransformersStack extends Stack {
           POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
           POSTGRES_DB: ecs.Secret.fromSecretsManager(postgresSecret, 'dbname'),
         },
-        command: ['python', 'batch-embed.py'],
+        command: ['python', 'main.py'],
       });
     } else {
       const fargateTask = new ecs.FargateTaskDefinition(this, 'TransformersCpuTaskDef', {
@@ -124,7 +124,7 @@ export class ScotusticianTransformersStack extends Stack {
           POSTGRES_PASS: ecs.Secret.fromSecretsManager(postgresSecret, 'password'),
           POSTGRES_DB: ecs.Secret.fromSecretsManager(postgresSecret, 'dbname'),
         },
-        command: ['python', 'batch-embed.py'],
+        command: ['python', 'main.py'],
       });
     }
 

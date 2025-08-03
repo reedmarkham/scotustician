@@ -17,46 +17,72 @@ CREATE TABLE IF NOT EXISTS scotustician.transcript_embeddings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create utterance embeddings table with chunking metadata
-CREATE TABLE IF NOT EXISTS scotustician.utterance_embeddings (
+-- Drop old tables if they exist
+DROP TABLE IF EXISTS scotustician.utterance_embeddings CASCADE;
+DROP TABLE IF EXISTS scotustician.transcript_chunks CASCADE;
+DROP TABLE IF EXISTS scotustician.chunking_runs CASCADE;
+
+-- Create table for raw OA text data (all utterance metadata)
+CREATE TABLE IF NOT EXISTS scotustician.oa_text (
     id SERIAL PRIMARY KEY,
     case_id VARCHAR(255) NOT NULL,
     oa_id VARCHAR(255) NOT NULL,
     utterance_index INTEGER NOT NULL,
-    speaker_id VARCHAR(100),
-    speaker_name VARCHAR(255),
+    speaker_id VARCHAR(50),
+    speaker_name VARCHAR(255) NOT NULL,
     text TEXT NOT NULL,
-    vector vector(4096) NOT NULL,
     word_count INTEGER,
-    source_key VARCHAR(500),
+    token_count INTEGER,
     start_time_ms INTEGER,
     end_time_ms INTEGER,
     char_start_offset INTEGER,
     char_end_offset INTEGER,
-    token_count INTEGER,
-    embedding_model VARCHAR(100),
-    embedding_dimension INTEGER,
+    source_key VARCHAR(500),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(case_id, utterance_index)
 );
 
--- Create indexes for utterance embeddings
-CREATE INDEX IF NOT EXISTS idx_utterance_case_id 
-ON scotustician.utterance_embeddings(case_id);
+-- Create section-based document embeddings table
+CREATE TABLE IF NOT EXISTS scotustician.document_chunk_embeddings (
+    id SERIAL PRIMARY KEY,
+    case_id VARCHAR(255) NOT NULL,
+    oa_id VARCHAR(255) NOT NULL,
+    section_id INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    vector vector(1024) NOT NULL,
+    word_count INTEGER,
+    token_count INTEGER,
+    start_utterance_index INTEGER,
+    end_utterance_index INTEGER,
+    embedding_model VARCHAR(100),
+    embedding_dimension INTEGER,
+    source_key VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(case_id, section_id)
+);
 
-CREATE INDEX IF NOT EXISTS idx_utterance_speaker 
-ON scotustician.utterance_embeddings(speaker_name);
+-- Create indexes for oa_text
+CREATE INDEX IF NOT EXISTS idx_oa_text_case_id 
+ON scotustician.oa_text(case_id);
 
--- Indexes for efficient range queries during chunking
-CREATE INDEX IF NOT EXISTS idx_utterance_time_range 
-ON scotustician.utterance_embeddings(case_id, start_time_ms, end_time_ms);
+CREATE INDEX IF NOT EXISTS idx_oa_text_speaker 
+ON scotustician.oa_text(speaker_name);
 
-CREATE INDEX IF NOT EXISTS idx_utterance_char_range 
-ON scotustician.utterance_embeddings(case_id, char_start_offset, char_end_offset);
+CREATE INDEX IF NOT EXISTS idx_oa_text_speaker_id 
+ON scotustician.oa_text(speaker_id);
 
--- Index for efficient aggregation when generating case embeddings
-CREATE INDEX IF NOT EXISTS idx_utterance_embedding_model 
-ON scotustician.utterance_embeddings(case_id, embedding_model);
+CREATE INDEX IF NOT EXISTS idx_oa_text_time_range 
+ON scotustician.oa_text(case_id, start_time_ms, end_time_ms);
+
+-- Create indexes for document chunk embeddings
+CREATE INDEX IF NOT EXISTS idx_chunk_case_id 
+ON scotustician.document_chunk_embeddings(case_id);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_section 
+ON scotustician.document_chunk_embeddings(case_id, section_id);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_utterance_range 
+ON scotustician.document_chunk_embeddings(case_id, start_utterance_index, end_utterance_index);
 
 -- Create raw transcripts table
 CREATE TABLE IF NOT EXISTS scotustician.raw_transcripts (

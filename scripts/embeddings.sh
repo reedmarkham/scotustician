@@ -145,7 +145,7 @@ aws ecs run-task \
           { \"name\": \"MAX_WORKERS\", \"value\": \"$MAX_WORKERS\" },
           { \"name\": \"INCREMENTAL\", \"value\": \"$INCREMENTAL\" }
         ],
-        \"command\": [\"python\", \"batch-embed.py\"]
+        \"command\": [\"python\", \"main.py\"]
       }
     ]
   }"

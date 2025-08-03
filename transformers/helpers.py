@@ -1,10 +1,14 @@
 import logging, io, json, os
+# Disable tokenizers parallelism to avoid warnings in multi-threaded environment
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from typing import List, Dict
 import xml.etree.ElementTree as ET
+from tqdm import tqdm
 
 import boto3, botocore.exceptions
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
+import psycopg2
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -32,21 +36,30 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         # --- Generate XML ---
         transcript_root = ET.Element("transcript")
         count = 0
-        for section in sections:
-            for turn in section.get("turns", []):
-                speaker = turn.get("speaker", {}).get("name", "Unknown")
-                speaker_id = str(turn.get("speaker", {}).get("id", ""))
-                for block in turn.get("text_blocks", []):
-                    text = block.get("text")
-                    if text:
-                        utterance_el = ET.SubElement(
-                            transcript_root,
-                            "utterance",
-                            speaker=speaker,
-                            speaker_id=speaker_id
-                        )
-                        utterance_el.text = text
-                        count += 1
+        # Count total text blocks for progress bar
+        total_blocks = sum(
+            len(turn.get("text_blocks", []))
+            for section in sections
+            for turn in section.get("turns", [])
+        )
+        
+        with tqdm(total=total_blocks, desc="Converting to XML", unit="blocks") as pbar:
+            for section in sections:
+                for turn in section.get("turns", []):
+                    speaker = turn.get("speaker", {}).get("name", "Unknown")
+                    # speaker_id = str(turn.get("speaker", {}).get("id", ""))  # Commented out - not needed for embeddings
+                    for block in turn.get("text_blocks", []):
+                        text = block.get("text")
+                        if text:
+                            utterance_el = ET.SubElement(
+                                transcript_root,
+                                "utterance",
+                                speaker=speaker
+                                # speaker_id=speaker_id  # Commented out - not needed for embeddings
+                            )
+                            utterance_el.text = text
+                            count += 1
+                        pbar.update(1)
 
         if count == 0:
             raise ValueError("No text blocks found in transcript")
@@ -79,170 +92,279 @@ def get_transcript_s3(bucket: str, key: str) -> str:
 
         raise
 
-def truncate_to_tokens(text: str, max_tokens: int = 4096) -> str:
-    tokens = tokenizer.encode(text, add_special_tokens=False)
-    logger.info(f"Token count before truncation: {len(tokens)}")
-
-    truncated_tokens = tokens[:max_tokens]
-    logger.info(f"Token count after truncation: {len(truncated_tokens)}")
-
-    return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
-
-def generate_utterance_embeddings(
-    xml_string: str,
-    model_name: str,
-    model_dimension: int,
-    batch_size: int
-) -> List[Dict]:
-    """Generate embeddings for individual utterances with metadata."""
-    # Validate dimension for pgvector compatibility
-    if model_dimension > 2000:
-        raise ValueError(f"Model dimension {model_dimension} exceeds pgvector maximum of 2000")
-    
-    logger.info(f"Loading model: {model_name}")
-    model = SentenceTransformer(model_name)
-
-    try:
-        root = ET.fromstring(xml_string)
-        utterances = []
-        texts_to_embed = []
-        char_offset = 0
-        
-        for idx, el in enumerate(root.findall("utterance")):
-            if el.text and len(el.text.strip().split()) > 3:
-                speaker_id = el.attrib.get('speaker_id', '')
-                speaker_name = el.attrib.get('speaker', 'Unknown')
-                text = el.text.strip()
-                full_text = f"{speaker_name}: {text}"
-                
-                # Get timing info if available
-                start_time = el.attrib.get('start_time_ms')
-                end_time = el.attrib.get('end_time_ms')
-                
-                # Calculate token count for the text
-                token_count = len(tokenizer.encode(text, add_special_tokens=False))
-                
-                utterances.append({
-                    'utterance_index': idx,
-                    'speaker_id': speaker_id,
-                    'speaker_name': speaker_name,
-                    'text': text,
-                    'full_text': full_text,
-                    'word_count': len(text.split()),
-                    'token_count': token_count,
-                    'char_start_offset': char_offset,
-                    'char_end_offset': char_offset + len(text),
-                    'start_time_ms': int(start_time) if start_time else None,
-                    'end_time_ms': int(end_time) if end_time else None,
-                    'embedding_model': model_name,
-                    'embedding_dimension': model_dimension
-                })
-                texts_to_embed.append(full_text)
-                char_offset += len(text) + 1  # +1 for space between utterances
-
-        if not utterances:
-            raise ValueError("No valid utterances found to embed.")
-
-        logger.info(f"Generating embeddings for {len(utterances)} utterances.")
-        embeddings = model.encode(texts_to_embed, batch_size=batch_size, show_progress_bar=True)
-        
-        # Add embeddings to utterance data
-        for utt, emb in zip(utterances, embeddings):
-            utt['embedding'] = emb.tolist()
-            
-        return utterances
-
-    except Exception as e:
-        logger.error(f"Failed to generate utterance embeddings from XML: {e}")
-        raise
-
-def generate_utterance_embeddings_incremental(
-    xml_string: str,
+def process_transcript_with_chunking(
+    bucket: str,
+    key: str,
     model_name: str,
     model_dimension: int,
     batch_size: int,
-    case_id: str,
-    conn
+    conn,
+    meta: Dict[str, str]
 ) -> List[Dict]:
-    """Generate embeddings incrementally, skipping already processed utterances."""
-    # Validate dimension for pgvector compatibility
-    if model_dimension > 2000:
-        raise ValueError(f"Model dimension {model_dimension} exceeds pgvector maximum of 2000")
-    
-    # Get existing embeddings for this case/model combination
-    existing_embeddings = get_existing_embeddings(case_id, model_name, conn)
-    
-    logger.info(f"Loading model: {model_name}")
-    model = SentenceTransformer(model_name)
-
+    """
+    Section-based chunking approach:
+    1. Stores raw utterance data to oa_text table
+    2. Creates chunks based on JSON sections
+    3. Each section becomes a chunk (with section_id = array index)
+    4. Generates embeddings for each section
+    """
+    logger.info(f"Processing transcript from s3://{bucket}/{key}")
     try:
-        root = ET.fromstring(xml_string)
-        utterances_to_process = []
-        texts_to_embed = []
-        char_offset = 0
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        data = json.load(obj['Body'])
+
+        # --- Validate expected structure ---
+        if "transcript" not in data or "sections" not in data["transcript"]:
+            raise ValueError("Missing expected keys: 'transcript.sections'")
+
+        sections = data["transcript"]["sections"]
+        if not isinstance(sections, list) or len(sections) == 0:
+            raise ValueError("Transcript 'sections' is empty or malformed")
+
+        # --- Process by section for better semantic chunking ---
+        all_utterances_data = []
+        section_chunks = []
+        global_utterance_idx = 0
+        global_char_offset = 0
+
+        logger.info(f"Processing {len(sections)} sections...")
         
-        for idx, el in enumerate(root.findall("utterance")):
-            if el.text and len(el.text.strip().split()) > 3:
-                speaker_id = el.attrib.get('speaker_id', '')
-                speaker_name = el.attrib.get('speaker', 'Unknown')
-                text = el.text.strip()
+        for section_id, section in enumerate(sections):
+            section_utterances = []
+            section_texts = []
+            start_utterance_idx = global_utterance_idx
+            
+            # Process all turns in this section
+            for turn in section.get("turns", []):
+                speaker = turn.get("speaker", {}).get("name", "Unknown")
+                speaker_id = str(turn.get("speaker", {}).get("id", ""))
                 
-                # Check if this utterance already has embeddings
-                if idx in existing_embeddings:
-                    existing = existing_embeddings[idx]
-                    # Verify text hasn't changed
-                    if existing['text'] == text:
-                        logger.debug(f"Skipping utterance {idx} - already has embeddings")
-                        char_offset += len(text) + 1
-                        continue
-                    else:
-                        logger.warning(f"Utterance {idx} text has changed, will re-generate embedding")
+                for block in turn.get("text_blocks", []):
+                    text = block.get("text")
+                    if text and len(text.strip().split()) > 3:
+                        text = text.strip()
+                        
+                        # Collect full metadata for oa_text table
+                        token_count = len(tokenizer.encode(text, add_special_tokens=False))
+                        
+                        utterance_data = {
+                            'case_id': meta["case_id"],
+                            'oa_id': meta["oa_id"],
+                            'utterance_index': global_utterance_idx,
+                            'speaker_id': speaker_id,
+                            'speaker_name': speaker,
+                            'text': text,
+                            'word_count': len(text.split()),
+                            'token_count': token_count,
+                            'char_start_offset': global_char_offset,
+                            'char_end_offset': global_char_offset + len(text),
+                            'start_time_ms': block.get('start_time_ms'),
+                            'end_time_ms': block.get('end_time_ms'),
+                            'source_key': key
+                        }
+                        
+                        all_utterances_data.append(utterance_data)
+                        section_utterances.append(utterance_data)
+                        section_texts.append(f"{speaker}: {text}")
+                        
+                        global_char_offset += len(text) + 1
+                        global_utterance_idx += 1
+            
+            # Create chunk for this section if it has content
+            if section_texts:
+                chunk_text = "\n".join(section_texts)
+                token_count = len(tokenizer.encode(chunk_text, add_special_tokens=False))
                 
-                full_text = f"{speaker_name}: {text}"
+                # Truncate if exceeds max tokens
+                if token_count > 8000:
+                    logger.warning(f"Section {section_id} exceeds 8000 tokens ({token_count}), truncating...")
+                    chunk_text = truncate_to_tokens(chunk_text, 8000)
+                    token_count = 8000
                 
-                # Get timing info if available
-                start_time = el.attrib.get('start_time_ms')
-                end_time = el.attrib.get('end_time_ms')
-                
-                # Calculate token count for the text
-                token_count = len(tokenizer.encode(text, add_special_tokens=False))
-                
-                utterance_data = {
-                    'utterance_index': idx,
-                    'speaker_id': speaker_id,
-                    'speaker_name': speaker_name,
-                    'text': text,
-                    'full_text': full_text,
-                    'word_count': len(text.split()),
+                section_chunk = {
+                    'section_id': section_id,
+                    'chunk_text': chunk_text,
+                    'word_count': len(chunk_text.split()),
                     'token_count': token_count,
-                    'char_start_offset': char_offset,
-                    'char_end_offset': char_offset + len(text),
-                    'start_time_ms': int(start_time) if start_time else None,
-                    'end_time_ms': int(end_time) if end_time else None,
-                    'embedding_model': model_name,
-                    'embedding_dimension': model_dimension
+                    'start_utterance_index': start_utterance_idx,
+                    'end_utterance_index': global_utterance_idx - 1,
+                    'utterance_count': len(section_utterances)
                 }
                 
-                utterances_to_process.append(utterance_data)
-                texts_to_embed.append(full_text)
-                char_offset += len(text) + 1
+                section_chunks.append(section_chunk)
+                logger.info(f"Created chunk for section {section_id}: {len(section_utterances)} utterances, {token_count} tokens")
 
-        if not utterances_to_process:
-            logger.info("No new utterances to process - all embeddings already exist")
-            return []
+        if not all_utterances_data:
+            raise ValueError("No valid utterances found in transcript")
 
-        logger.info(f"Generating embeddings for {len(utterances_to_process)} new utterances (skipped {len(existing_embeddings)} existing)")
-        embeddings = model.encode(texts_to_embed, batch_size=batch_size, show_progress_bar=True)
+        logger.info(f"Processed {len(all_utterances_data)} total utterances across {len(section_chunks)} sections.")
         
-        # Add embeddings to utterance data
-        for utt, emb in zip(utterances_to_process, embeddings):
-            utt['embedding'] = emb.tolist()
-            
-        return utterances_to_process
+        # Insert raw utterance data to oa_text table
+        insert_oa_text_data(all_utterances_data, conn)
+        
+        # Generate embeddings for section chunks
+        logger.info(f"Generating embeddings for {len(section_chunks)} section chunks...")
+        model = SentenceTransformer(model_name)
+        model.eval()
+        
+        chunk_texts = [chunk['chunk_text'] for chunk in section_chunks]
+        embeddings = model.encode(chunk_texts, batch_size=batch_size, show_progress_bar=True, convert_to_tensor=False)
+        
+        # Add embeddings and metadata to chunks
+        for chunk, emb in zip(section_chunks, embeddings):
+            chunk.update({
+                'case_id': meta["case_id"],
+                'oa_id': meta["oa_id"],
+                'vector': emb.tolist(),
+                'embedding_model': model_name,
+                'embedding_dimension': model_dimension,
+                'source_key': key
+            })
+
+        return section_chunks
 
     except Exception as e:
-        logger.error(f"Failed to generate utterance embeddings from XML: {e}")
+        logger.error(f"Failed to process transcript {key}: {e}")
+        
+        # Upload malformed file to junk/
+        try:
+            bad_obj = s3.get_object(Bucket=bucket, Key=key)
+            bad_data = bad_obj["Body"].read()
+            junk_key = f"junk/{key.split('/')[-1]}"
+            s3.put_object(Bucket=bucket, Key=junk_key, Body=bad_data)
+            logger.warning(f"Junk file saved to s3://{bucket}/{junk_key}")
+        except botocore.exceptions.BotoCoreError as junk_err:
+            logger.error(f"Could not upload junk file: {junk_err}")
+
         raise
+
+
+def process_single_document(bucket: str, input_key: str, model_name: str, model_dimension: int, batch_size: int):
+    """Process a single document from S3 (moved from main.py)"""
+    meta = extract_metadata_from_key(input_key)
+    
+    # Get database connection config from environment
+    conn = psycopg2.connect(
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASS", ""),
+        database=os.getenv("POSTGRES_DB", "scotustician")
+    )
+    
+    try:
+        ensure_tables_exist(conn)
+        
+        # Use section-based chunking approach
+        chunks = process_transcript_with_chunking(
+            bucket, input_key, model_name, model_dimension, batch_size, conn, meta
+        )
+        
+        # Insert document chunk embeddings
+        insert_document_chunk_embeddings(chunks, conn)
+        
+        logger.info(f"Successfully processed single document: {input_key}")
+    finally:
+        conn.close()
+
+def truncate_to_tokens(text: str, max_tokens: int = 8000) -> str:
+    """Truncate text to specified token limit"""
+    tokens = tokenizer.encode(text, add_special_tokens=False)
+    if len(tokens) <= max_tokens:
+        return text
+        
+    logger.info(f"Truncating from {len(tokens)} to {max_tokens} tokens")
+    truncated_tokens = tokens[:max_tokens]
+    return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+
+def insert_oa_text_data(utterances_data: List[Dict], conn):
+    """Insert raw utterance data into oa_text table"""
+    logger.info(f"Inserting {len(utterances_data)} utterances to oa_text table")
+    
+    with conn.cursor() as cur:
+        for utt in tqdm(utterances_data, desc="Inserting to oa_text"):
+            cur.execute("""
+                INSERT INTO scotustician.oa_text 
+                (case_id, oa_id, utterance_index, speaker_id, speaker_name, 
+                 text, word_count, token_count, start_time_ms, end_time_ms,
+                 char_start_offset, char_end_offset, source_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (case_id, utterance_index) 
+                DO UPDATE SET
+                    speaker_id = EXCLUDED.speaker_id,
+                    speaker_name = EXCLUDED.speaker_name,
+                    text = EXCLUDED.text,
+                    word_count = EXCLUDED.word_count,
+                    token_count = EXCLUDED.token_count,
+                    start_time_ms = EXCLUDED.start_time_ms,
+                    end_time_ms = EXCLUDED.end_time_ms,
+                    char_start_offset = EXCLUDED.char_start_offset,
+                    char_end_offset = EXCLUDED.char_end_offset,
+                    source_key = EXCLUDED.source_key
+            """, (
+                utt['case_id'],
+                utt['oa_id'], 
+                utt['utterance_index'],
+                utt.get('speaker_id'),
+                utt['speaker_name'],
+                utt['text'],
+                utt['word_count'],
+                utt['token_count'],
+                utt.get('start_time_ms'),
+                utt.get('end_time_ms'),
+                utt.get('char_start_offset'),
+                utt.get('char_end_offset'),
+                utt['source_key']
+            ))
+        
+        conn.commit()
+    
+    logger.info(f"Successfully inserted {len(utterances_data)} utterances")
+
+def insert_document_chunk_embeddings(chunks: List[Dict], conn):
+    """Insert section-based document chunk embeddings into database"""
+    logger.info(f"Inserting {len(chunks)} section-based chunk embeddings")
+    
+    with conn.cursor() as cur:
+        for chunk in chunks:
+            expected_dim = chunk.get('embedding_dimension', 1024)
+            assert len(chunk['vector']) == expected_dim, f"Embedding has invalid dimension: {len(chunk['vector'])}, expected {expected_dim}"
+            
+            cur.execute("""
+                INSERT INTO scotustician.document_chunk_embeddings 
+                (case_id, oa_id, section_id, chunk_text, vector, word_count, 
+                 token_count, start_utterance_index, end_utterance_index, 
+                 embedding_model, embedding_dimension, source_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (case_id, section_id) 
+                DO UPDATE SET
+                    chunk_text = EXCLUDED.chunk_text,
+                    vector = EXCLUDED.vector,
+                    word_count = EXCLUDED.word_count,
+                    token_count = EXCLUDED.token_count,
+                    start_utterance_index = EXCLUDED.start_utterance_index,
+                    end_utterance_index = EXCLUDED.end_utterance_index,
+                    embedding_model = EXCLUDED.embedding_model,
+                    embedding_dimension = EXCLUDED.embedding_dimension,
+                    source_key = EXCLUDED.source_key
+            """, (
+                chunk['case_id'],
+                chunk['oa_id'],
+                chunk['section_id'],
+                chunk['chunk_text'],
+                chunk['vector'],
+                chunk['word_count'],
+                chunk['token_count'],
+                chunk['start_utterance_index'],
+                chunk['end_utterance_index'],
+                chunk['embedding_model'],
+                chunk['embedding_dimension'],
+                chunk['source_key']
+            ))
+        
+        conn.commit()
+    
+    logger.info(f"Successfully inserted {len(chunks)} section-based embeddings")
+
 
 def extract_metadata_from_key(key: str) -> Dict[str, str]:
     filename = key.split("/")[-1].replace(".json", "")
@@ -277,91 +399,3 @@ def ensure_tables_exist(conn):
     
     logger.info("Tables exist.")
 
-def get_existing_embeddings(case_id: str, model_name: str, conn) -> Dict[int, Dict]:
-    """Query existing embeddings for a case and model combination."""
-    logger.info(f"Checking existing embeddings for case_id={case_id}, model={model_name}")
-    
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT utterance_index, speaker_id, speaker_name, text, word_count,
-                   token_count, char_start_offset, char_end_offset, 
-                   start_time_ms, end_time_ms, embedding_dimension
-            FROM scotustician.utterance_embeddings 
-            WHERE case_id = %s AND embedding_model = %s
-            ORDER BY utterance_index
-        """, (case_id, model_name))
-        
-        existing = {}
-        for row in cur.fetchall():
-            existing[row[0]] = {
-                'utterance_index': row[0],
-                'speaker_id': row[1],
-                'speaker_name': row[2],
-                'text': row[3],
-                'word_count': row[4],
-                'token_count': row[5],
-                'char_start_offset': row[6],
-                'char_end_offset': row[7],
-                'start_time_ms': row[8],
-                'end_time_ms': row[9],
-                'embedding_dimension': row[10]
-            }
-    
-    logger.info(f"Found {len(existing)} existing embeddings for this case/model combination")
-    return existing
-
-def insert_utterance_embeddings_to_postgres(
-    utterances: List[Dict],
-    meta: Dict[str, str],
-    source_key: str,
-    conn
-):
-    with conn.cursor() as cur:
-        for utt in utterances:
-            expected_dim = utt.get('embedding_dimension', 384)
-            assert len(utt['embedding']) == expected_dim, f"Embedding has invalid dimension: {len(utt['embedding'])}, expected {expected_dim}"
-            
-            cur.execute("""
-                INSERT INTO scotustician.utterance_embeddings 
-                (case_id, oa_id, utterance_index, speaker_id, speaker_name, 
-                 text, vector, word_count, source_key, token_count,
-                 char_start_offset, char_end_offset, start_time_ms, end_time_ms,
-                 embedding_model, embedding_dimension)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (case_id, utterance_index) 
-                DO UPDATE SET
-                    speaker_id = EXCLUDED.speaker_id,
-                    speaker_name = EXCLUDED.speaker_name,
-                    text = EXCLUDED.text,
-                    vector = EXCLUDED.vector,
-                    word_count = EXCLUDED.word_count,
-                    source_key = EXCLUDED.source_key,
-                    token_count = EXCLUDED.token_count,
-                    char_start_offset = EXCLUDED.char_start_offset,
-                    char_end_offset = EXCLUDED.char_end_offset,
-                    start_time_ms = EXCLUDED.start_time_ms,
-                    end_time_ms = EXCLUDED.end_time_ms,
-                    embedding_model = EXCLUDED.embedding_model,
-                    embedding_dimension = EXCLUDED.embedding_dimension
-            """, (
-                meta["case_id"],
-                meta["oa_id"],
-                utt['utterance_index'],
-                utt['speaker_id'],
-                utt['speaker_name'],
-                utt['text'],
-                utt['embedding'],
-                utt['word_count'],
-                source_key,
-                utt.get('token_count'),
-                utt.get('char_start_offset'),
-                utt.get('char_end_offset'),
-                utt.get('start_time_ms'),
-                utt.get('end_time_ms'),
-                utt.get('embedding_model'),
-                utt.get('embedding_dimension')
-            ))
-        
-        conn.commit()
-    
-    logger.info(f"Inserted {len(utterances)} utterance embeddings for case_id={meta['case_id']}")
