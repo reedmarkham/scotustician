@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize S3 and tokenizer
 s3 = boto3.client("s3")
-MODEL_NAME = os.environ.get('MODEL_NAME', 'Qwen/Qwen3-Embedding-0.6B')
+MODEL_NAME = os.environ.get('MODEL_NAME', 'baai/bge-m3')
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 def get_transcript_s3(bucket: str, key: str) -> str:

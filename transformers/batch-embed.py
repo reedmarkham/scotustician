@@ -19,9 +19,9 @@ import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
-MODEL_NAME = os.getenv("MODEL_NAME", "nvidia/NV-Embed-v2")
-MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 4096))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))  # Reduced for large NV-Embed-v2 model
+MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
+MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
 INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
 

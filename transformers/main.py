@@ -12,7 +12,7 @@ from helpers import (
 import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
+MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
 MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
 
