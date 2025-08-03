@@ -4,7 +4,7 @@
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) model by default, which generates 1024-dimensional embeddings (configurable from 32 to 1024) optimized for semantic retrieval. The embeddings are limited to a maximum of 2000 dimensions to ensure compatibility with pgvector.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model by default, which generates 1024-dimensional embeddings optimized for semantic retrieval. The embeddings are limited to a maximum of 2000 dimensions to ensure compatibility with pgvector.
 
 ---
 
@@ -14,7 +14,7 @@ This pipeline supports downstream tasks such as semantic search, clustering, and
 scotustician/
 ├── ingest/            	# Containerized task to ingest raw data from Oyez.org API to S3
 ├── transformers/      	# Containerized task for generating and storing text embeddings in PostgreSQL
-├── infra/             	# AWS CDK code defining ECS services and other infrastructure
+├── infrastructure/             	# AWS CDK code defining ECS services and other infrastructure
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions
 ```
 - AWS CDK (TypeScript) provisions clusters, networking, and ECS tasks using Docker images.
@@ -25,7 +25,7 @@ scotustician/
 
 Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses the Qwen3-Embedding-0.6B model to generate embeddings. 
+2. Processed text from `ingest` on S3 is read by `transformers`, which uses the baai/bge-m3 model to generate embeddings. 
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
 
@@ -92,7 +92,7 @@ npx cdk bootstrap \
   aws://<AWS_ACCOUNT_ID>/<AWS_REGION>
 ```
 
-### b. Update `infra/cdk.json`
+### b. Update `infrastructure/cdk.json`
 
 ```json
 {

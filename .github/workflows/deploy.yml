@@ -35,14 +35,14 @@ jobs:
         with:
           filters: |
             shared:
-              - 'infra/**'
+              - 'infrastructure/**'
               - '.github/workflows/**'
             ingest:
-              - 'infra/**'
+              - 'infrastructure/**'
               - 'ingest/*'
               - 'ingest/**/*'
             transformers:
-              - 'infra/**'
+              - 'infrastructure/**'
               - 'transformers/*'
               - 'transformers/**/*'
               - '.github/workflows/**'
@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: '20'
 
-      - run: cd infra && npm ci
+      - run: cd infrastructure && npm ci
 
       - name: Check GPU quota
         id: gpu_check
@@ -88,14 +88,14 @@ jobs:
 
       - name: Clean up existing changeset
         run: |
-          cd infra
+          cd infrastructure
           aws cloudformation delete-change-set \
             --stack-name ScotusticianSharedStack \
             --change-set-name cdk-deploy-change-set 2>/dev/null || true
 
       - name: Deploy shared stack
         run: |
-          cd infra
+          cd infrastructure
           if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
             CONTEXT="--context useGpu=true"
             echo "Deploying with GPU context"
@@ -116,7 +116,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cdk-outputs-shared
-          path: infra/cdk-outputs-shared.json
+          path: infrastructure/cdk-outputs-shared.json
 
   deploy_ingest:
     needs: [plan, deploy_shared]
@@ -146,24 +146,24 @@ jobs:
         with:
           node-version: '20'
 
-      - run: cd infra && npm ci
+      - run: cd infrastructure && npm ci
 
       - name: Download shared outputs
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
-          path: infra
+          path: infrastructure
         continue-on-error: true
 
       - name: Clean up existing changeset
         run: |
-          cd infra
+          cd infrastructure
           aws cloudformation delete-change-set \
             --stack-name ScotusticianIngestStack \
             --change-set-name cdk-deploy-change-set 2>/dev/null || true
 
       - run: |
-          cd infra
+          cd infrastructure
           npx cdk deploy ScotusticianIngestStack \
             --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
             --toolkit-stack-name $TOOLKIT_STACK \
@@ -175,7 +175,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cdk-outputs-ingest
-          path: infra/cdk-outputs-ingest.json
+          path: infrastructure/cdk-outputs-ingest.json
 
   deploy_transformers:
     needs: [plan, deploy_shared]
@@ -205,13 +205,13 @@ jobs:
         with:
           node-version: '20'
 
-      - run: cd infra && npm ci
+      - run: cd infrastructure && npm ci
 
       - name: Download shared outputs
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
-          path: infra
+          path: infrastructure
         continue-on-error: true
 
       - name: Check GPU quota
@@ -228,14 +228,14 @@ jobs:
 
       - name: Clean up existing changeset
         run: |
-          cd infra
+          cd infrastructure
           aws cloudformation delete-change-set \
             --stack-name ScotusticianTransformersStack \
             --change-set-name cdk-deploy-change-set 2>/dev/null || true
 
       - name: Deploy transformers stack
         run: |
-          cd infra
+          cd infrastructure
           if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
             CONTEXT="--context useGpu=true"
             echo "Deploying with GPU context"
@@ -256,5 +256,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cdk-outputs-transformers
-          path: infra/cdk-outputs-transformers.json
+          path: infrastructure/cdk-outputs-transformers.json
 
