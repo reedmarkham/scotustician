@@ -85,8 +85,8 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
-          MODEL_NAME: 'nvidia/NV-Embed-v2',
-          MODEL_DIMENSION: '4096',
+          MODEL_NAME: 'Qwen/Qwen3-Embedding-0.6B',
+          MODEL_DIMENSION: '1024',
           BATCH_SIZE: '4',
           MAX_WORKERS: '2',
           INCREMENTAL: 'true'
@@ -112,8 +112,8 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
-          MODEL_NAME: 'all-MiniLM-L6-v2',
-          MODEL_DIMENSION: '384',
+          MODEL_NAME: 'Qwen/Qwen3-Embedding-0.6B',
+          MODEL_DIMENSION: '1024',
           BATCH_SIZE: '16',
           MAX_WORKERS: '4',
           INCREMENTAL: 'true'
