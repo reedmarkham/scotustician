@@ -13,7 +13,6 @@ import boto3
 logger = logging.getLogger(__name__)
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
-DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 OYEZ_CASE_SUMMARY = 'https://api.oyez.org/cases?per_page=0'
 OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
@@ -132,12 +131,9 @@ def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) ->
     size_bytes = len(serialized.encode("utf-8"))
     size_mb = size_bytes / (1024 * 1024)
 
-    if DRY_RUN:
-        logger.info(f"[DRY-RUN] Would upload: s3://{BUCKET}/{key} | Size: {size_mb:.2f} MB")
-    else:
-        s3.put_object(Body=serialized, Bucket=BUCKET, Key=key)
-        duration = time.time() - start_time
-        logger.info(f"Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
+    s3.put_object(Body=serialized, Bucket=BUCKET, Key=key)
+    duration = time.time() - start_time
+    logger.info(f"Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
 
     return size_mb
 

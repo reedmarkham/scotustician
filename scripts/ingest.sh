@@ -6,7 +6,6 @@ REGION="${AWS_REGION:-us-east-1}"
 START_TERM="${START_TERM:-1980}"
 END_TERM="${END_TERM:-2025}"
 MAX_WORKERS="${MAX_WORKERS:-2}"
-DRY_RUN="${DRY_RUN:-false}"
 S3_BUCKET="${S3_BUCKET:-scotustician}"
 RAW_PREFIX="${RAW_PREFIX:-raw/}"
 
@@ -15,7 +14,6 @@ echo "=== Ingest Configuration ==="
 echo "Region: $REGION"
 echo "Term Range: $START_TERM - $END_TERM"
 echo "Max Workers: $MAX_WORKERS"
-echo "Dry Run: $DRY_RUN"
 echo "S3 Bucket: $S3_BUCKET"
 echo "Raw Prefix: $RAW_PREFIX"
 echo "============================"
@@ -85,7 +83,7 @@ if [[ -z "$SG_ID" || "$SG_ID" == "None" ]]; then
 fi
 
 echo "Launching INGEST task: $TASK_DEF in cluster: $CLUSTER"
-echo "Mode: $([ "$DRY_RUN" == "true" ] && echo "DRY RUN" || echo "PRODUCTION")"
+echo "Mode: PRODUCTION"
 
 aws ecs run-task \
   --cluster "$CLUSTER" \
@@ -102,8 +100,7 @@ aws ecs run-task \
           { "name": "RAW_PREFIX", "value": "'"$RAW_PREFIX"'" },
           { "name": "START_TERM", "value": "'"$START_TERM"'" },
           { "name": "END_TERM", "value": "'"$END_TERM"'" },
-          { "name": "MAX_WORKERS", "value": "'"$MAX_WORKERS"'" },
-          { "name": "DRY_RUN", "value": "'"$DRY_RUN"'" }
+          { "name": "MAX_WORKERS", "value": "'"$MAX_WORKERS"'" }
         ]
       }
     ]

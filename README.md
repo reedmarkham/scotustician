@@ -2,9 +2,9 @@
 
 **scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions.
 
-[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. Rather than overengineering the initial pipeline, this project takes a minimalist approach to data ingestion in order to prioritize building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings).
+[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings) rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model by default, which generates 1024-dimensional embeddings optimized for semantic retrieval. The embeddings are limited to a maximum of 2000 dimensions to ensure compatibility with pgvector.
+This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model by default, which generates 1024d embeddings optimized for semantic retrieval.
 
 ---
 
@@ -48,7 +48,9 @@ You will need the ARN, access key, and secret access key for an existing AWS IAM
 
 ### 2. Deploy `scotustician-db`
 
-Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing.
+Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors).
+
+PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack. The database host and secret name are configured via CDK context parameters.
 
 ### 3. (Optional) Request GPU Instance Quota
 
@@ -75,8 +77,6 @@ Configure the following repository secrets in **GitHub > Settings > Secrets and 
 | `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
 | `S3_BUCKET`         | S3 bucket name (optional, defaults to scotustician) | `scotustician`                                   |
 
-> **Note**: PostgreSQL credentials are now managed through AWS Secrets Manager. The database host and secret name are configured via CDK context parameters. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for details.
-
 ---
 
 ## Bootstrap the CDK Environment
@@ -92,7 +92,8 @@ npx cdk bootstrap \
   aws://<AWS_ACCOUNT_ID>/<AWS_REGION>
 ```
 
-### b. Update `infrastructure/cdk.json`
+For reference, these code snippets in this repository reflect how the bootstrap qualifier is referenced.
+### `infrastructure/cdk.json`
 
 ```json
 {
@@ -103,7 +104,7 @@ npx cdk bootstrap \
 }
 ```
 
-### c. Update CDK Stacks with Qualifier
+### `infrastructure/lib/scotustician-%-stack.ts`
 
 ```ts
 const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
@@ -130,15 +131,17 @@ After deployment via CDK, you can run the data ingestion and transformation task
 
 The `scripts/` directory contains the following utilities:
 
-| Script | Purpose |
+| File | Usage |
 |--------|---------|
-| `ingest.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
-| `embeddings.sh` | Runs the embedding generation task using GPU (NVIDIA NV-Embed-v2) or CPU (MiniLM-L6-v2) models with incremental processing |
+| `bootstrap.sh` | Gets account ID and region from AWS CLI to then run the CDK bootstrap command, allowing the qualifier to be used downstream for consistent deployments |
 | `chunking.sql` | SQL queries for downstream processing of utterance embeddings with various chunking strategies |
+| `embeddings.sh` | Runs the embedding generation task with incremental processing |
+| `ingest.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
+
 
 ### Running Data Ingestion
 
-To ingest oral argument data from the Oyez.org API:
+To ingest oral argument data from the Oyez.org API to S3:
 
 ```bash
 ./scripts/ingest.sh
@@ -146,7 +149,7 @@ To ingest oral argument data from the Oyez.org API:
 
 This script will:
 - Dynamically retrieve the ECS cluster name and task definition from CloudFormation
-- Launch a Fargate task with incremental loading (skips existing files)
+- Launch a Fargate task with incremental loading (skips existing files on S3)
 - Store raw JSON files in S3 under `s3://scotustician/raw/oa/`
 - Display configuration and progress information
 - Print sample data for validation after completion
@@ -155,14 +158,13 @@ This script will:
 
 You can override environment variables:
 ```bash
-START_TERM=2023 END_TERM=2024 DRY_RUN=true ./scripts/ingest.sh
+START_TERM=2023 END_TERM=2024 ./scripts/ingest.sh
 ```
 
 Environment variables with defaults:
 - `START_TERM`: 1980
 - `END_TERM`: 2025
 - `MAX_WORKERS`: 2
-- `DRY_RUN`: false
 - `S3_BUCKET`: scotustician
 - `RAW_PREFIX`: raw/
 
@@ -175,7 +177,7 @@ To generate embeddings from ingested data:
 ```
 
 This script will:
-- Automatically detect GPU or CPU task definitions using Qwen3-Embedding-0.6B (1024-dim by default)
+- Automatically detect GPU or CPU task definitions
 - Use appropriate security groups for RDS access in private subnets
 - Read XML transcript data from S3 and generate both case-level and utterance-level embeddings
 - Support incremental processing (skip existing embeddings by default)
@@ -226,13 +228,7 @@ aws ecs describe-tasks \
   --tasks <task-arn>
 ```
 
-### Advanced Usage
-
-For detailed AWS CLI commands and troubleshooting, refer to:
-- [AWS_RESOURCE_GUIDE.md](AWS_RESOURCE_GUIDE.md) - Comprehensive guide for AWS resource management
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Fargate to RDS connectivity setup
-
-### Important Notes
+### Notes
 
 - The ingest task requires public subnet access to reach the Oyez.org API
 - The transformer task should use private subnets when accessing RDS
@@ -249,12 +245,6 @@ The infrastructure automatically creates scheduled ECS tasks:
   - Configured with EventBridge rule in the IngestStack
   - Uses the same task definition as manual runs
   - Environment variables: START_TERM=1980, END_TERM=current year
-
-## To-Do
-
-- Add Semantic Search API CDK stack
-- Build and deploy UI (another CDK stack) with search and visualization
-
 
 ---
 ## CI/CD

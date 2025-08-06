@@ -23,10 +23,9 @@ logger = logging.getLogger(__name__)
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
-DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 def main() -> None:
-    logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS} | Dry-run={DRY_RUN}")
+    logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS}")
     start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
@@ -124,7 +123,6 @@ def main() -> None:
         "oral_arguments_uploaded": total_uploaded,
         "total_data_uploaded_mb": round(total_bytes, 2),
         "total_time_seconds": round(duration, 2),
-        "dry_run": DRY_RUN,
         "incremental_load": True,
         "existing_oas_in_s3": len(existing_oa_ids),
         "total_oas_checked": diff_stats["total_oas_checked"],
