@@ -5,182 +5,90 @@
 			"Sid": "CloudFormationAccess",
 			"Effect": "Allow",
 			"Action": [
-				"cloudformation:DescribeStacks",
-				"cloudformation:CreateChangeSet",
-				"cloudformation:ExecuteChangeSet",
-				"cloudformation:DescribeChangeSet",
-				"cloudformation:GetTemplateSummary",
-				"cloudformation:DescribeStackEvents",
-				"cloudformation:DeleteStack",
-				"cloudformation:UpdateStack"
+				"cloudformation:*"
 			],
 			"Resource": [
-				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianSharedStack/*",
-				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianIngestStack/*",
-				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianTransformersStack/*",
-				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/CDKToolkit/*"
+				"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${PROJECT_NAME}*",
+				"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/CDKToolkit/*"
 			]
 		},
 		{
-			"Sid": "CDKBootstrapAssets",
+			"Sid": "CloudFormationGlobal",
 			"Effect": "Allow",
 			"Action": [
-				"s3:PutObject",
-				"s3:GetObject",
-				"s3:ListBucket"
+				"cloudformation:ListStacks",
+				"cloudformation:ValidateTemplate"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "CDKAndS3Access",
+			"Effect": "Allow",
+			"Action": [
+				"s3:*"
 			],
 			"Resource": [
-				"arn:aws:s3:::cdk-sctstcn-assets-<ACCOUNT_ID>-<REGION>",
-				"arn:aws:s3:::cdk-sctstcn-assets-<ACCOUNT_ID>-<REGION>/*"
+				"arn:aws:s3:::${CDK_ASSETS_BUCKET}",
+				"arn:aws:s3:::${CDK_ASSETS_BUCKET}/*",
+				"arn:aws:s3:::${PROJECT_S3_BUCKET}",
+				"arn:aws:s3:::${PROJECT_S3_BUCKET}/*"
 			]
 		},
 		{
-			"Sid": "PassExecutionRole",
+			"Sid": "IAMPassRole",
 			"Effect": "Allow",
 			"Action": [
 				"iam:PassRole",
 				"sts:AssumeRole"
 			],
-			"Resource": "arn:aws:iam::<ACCOUNT_ID>:role/cdk-sctstcn-cfn-exec-role-*"
-		},
-		{
-			"Sid": "ECSClusterManagement",
-			"Effect": "Allow",
-			"Action": [
-				"ecs:CreateCluster",
-				"ecs:DeleteCluster",
-				"ecs:DescribeClusters",
-				"ecs:ListClusters",
-				"ecs:TagResource",
-				"ecs:UntagResource"
-			],
 			"Resource": [
-				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:cluster/scotustician-*"
+				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CDK_EXEC_ROLE_PREFIX}*",
+				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*"
 			]
 		},
 		{
-			"Sid": "ECSServiceManagement",
+			"Sid": "ECSManagement",
 			"Effect": "Allow",
 			"Action": [
-				"ecs:CreateService",
-				"ecs:UpdateService",
-				"ecs:DeleteService",
-				"ecs:DescribeServices"
+				"ecs:*"
 			],
 			"Resource": [
-				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:service/scotustician-*/*"
+				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:cluster/${PROJECT_NAME_LOWER}-*",
+				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:service/${PROJECT_NAME_LOWER}-*/*",
+				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task/${PROJECT_NAME_LOWER}-*/*",
+				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task-definition/${PROJECT_NAME}*:*"
 			]
 		},
 		{
-			"Sid": "ECSTaskManagement",
+			"Sid": "EC2Management",
 			"Effect": "Allow",
 			"Action": [
-				"ecs:RegisterTaskDefinition",
-				"ecs:DeregisterTaskDefinition",
-				"ecs:DescribeTaskDefinition",
-				"ecs:ListTaskDefinitions"
+				"ec2:Describe*",
+				"ec2:*Instances",
+				"ec2:CreateTags",
+				"ec2:*SecurityGroup*",
+				"ec2:*Vpc*",
+				"ec2:*Subnet*",
+				"ec2:*InternetGateway*",
+				"ec2:*Route*",
+				"ec2:*NetworkInterface*"
 			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "ECSTaskRunning",
-			"Effect": "Allow",
-			"Action": [
-				"ecs:RunTask",
-				"ecs:StopTask",
-				"ecs:DescribeTasks",
-				"ecs:ListTasks"
-			],
-			"Resource": [
-				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task/scotustician-*/*",
-				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task-definition/Scotustician*:*"
-			]
-		},
-		{
-			"Sid": "ECSCapacityProviders",
-			"Effect": "Allow",
-			"Action": [
-				"ecs:CreateCapacityProvider",
-				"ecs:DescribeCapacityProviders"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "EC2ReadAccess",
-			"Effect": "Allow",
-			"Action": [
-				"ec2:Describe*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "EC2InstanceManagement",
-			"Effect": "Allow",
-			"Action": [
-				"ec2:RunInstances",
-				"ec2:StartInstances",
-				"ec2:StopInstances",
-				"ec2:TerminateInstances",
-				"ec2:CreateTags"
-			],
-			"Resource": [
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:instance/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:volume/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:network-interface/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:subnet/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:security-group/*",
-				"arn:aws:ec2:<REGION>::image/*"
-			],
+			"Resource": "*",
 			"Condition": {
 				"StringEquals": {
-					"aws:RequestTag/Project": "scotustician"
+					"aws:RequestTag/Project": "${PROJECT_TAG_VALUE}"
 				}
 			}
 		},
 		{
-			"Sid": "EC2SecurityGroupManagement",
+			"Sid": "ECRAccess",
 			"Effect": "Allow",
 			"Action": [
-				"ec2:CreateSecurityGroup",
-				"ec2:DeleteSecurityGroup",
-				"ec2:AuthorizeSecurityGroupIngress",
-				"ec2:AuthorizeSecurityGroupEgress",
-				"ec2:RevokeSecurityGroupIngress",
-				"ec2:RevokeSecurityGroupEgress"
+				"ecr:*"
 			],
 			"Resource": [
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:security-group/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc/*"
-			]
-		},
-		{
-			"Sid": "EC2VPCManagement",
-			"Effect": "Allow",
-			"Action": [
-				"ec2:CreateVpc",
-				"ec2:DeleteVpc",
-				"ec2:CreateSubnet",
-				"ec2:DeleteSubnet",
-				"ec2:CreateInternetGateway",
-				"ec2:AttachInternetGateway",
-				"ec2:DetachInternetGateway",
-				"ec2:DeleteInternetGateway",
-				"ec2:CreateRouteTable",
-				"ec2:DeleteRouteTable",
-				"ec2:CreateRoute",
-				"ec2:DeleteRoute",
-				"ec2:AssociateRouteTable",
-				"ec2:DisassociateRouteTable",
-				"ec2:CreateVpcEndpoint",
-				"ec2:DeleteVpcEndpoint",
-				"ec2:ModifyVpcEndpoint"
-			],
-			"Resource": [
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:subnet/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:internet-gateway/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:route-table/*",
-				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc-endpoint/*"
+				"arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${CDK_CONTAINER_ASSETS_PREFIX}*",
+				"arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${PROJECT_NAME_LOWER}-*"
 			]
 		},
 		{
@@ -192,73 +100,38 @@
 			"Resource": "*"
 		},
 		{
-			"Sid": "ECRRepositoryAccess",
+			"Sid": "LogsAndMonitoring",
 			"Effect": "Allow",
 			"Action": [
-				"ecr:BatchCheckLayerAvailability",
-				"ecr:GetDownloadUrlForLayer",
-				"ecr:BatchGetImage",
-				"ecr:DescribeRepositories",
-				"ecr:PutImage",
-				"ecr:InitiateLayerUpload",
-				"ecr:UploadLayerPart",
-				"ecr:CompleteLayerUpload"
+				"logs:*",
+				"cloudwatch:*",
+				"events:*"
 			],
 			"Resource": [
-				"arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/cdk-sctstcn-container-assets-*"
+				"arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:*${PROJECT_NAME_LOWER}*",
+				"arn:aws:cloudwatch:${AWS_REGION}:${AWS_ACCOUNT_ID}:alarm:${PROJECT_NAME}*",
+				"arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${PROJECT_NAME}*"
 			]
 		},
 		{
-			"Sid": "LogGroupManagement",
+			"Sid": "ParametersAndSecrets",
 			"Effect": "Allow",
 			"Action": [
-				"logs:CreateLogGroup",
-				"logs:PutRetentionPolicy",
-				"logs:DescribeLogGroups",
-				"logs:CreateLogStream",
-				"logs:PutLogEvents",
-				"logs:DeleteLogGroup"
-			],
-			"Resource": [
-				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/*",
-				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/Scotustician*",
-				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:*:log-stream:*"
-			]
-		},
-		{
-			"Sid": "SSMParameterAccess",
-			"Effect": "Allow",
-			"Action": [
-				"ssm:GetParameter",
-				"ssm:GetParameters",
-				"ssm:PutParameter",
-				"ssm:DescribeParameters",
-				"ssm:DeleteParameter"
-			],
-			"Resource": [
-				"arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/cdk-bootstrap/*",
-				"arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/scotustician/*"
-			]
-		},
-		{
-			"Sid": "SecretsManagerAccess",
-			"Effect": "Allow",
-			"Action": [
+				"ssm:*Parameter*",
 				"secretsmanager:GetSecretValue",
 				"secretsmanager:DescribeSecret"
 			],
 			"Resource": [
-				"arn:aws:secretsmanager:*:<ACCOUNT_ID>:secret:scotustician-db-credentials*"
+				"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/cdk-bootstrap/*",
+				"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${PROJECT_NAME_LOWER}/*",
+				"arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:${PROJECT_NAME_LOWER}-db-credentials*"
 			]
 		},
 		{
 			"Sid": "ServiceQuotasAccess",
 			"Effect": "Allow",
 			"Action": [
-				"servicequotas:GetServiceQuota",
-				"servicequotas:ListServiceQuotas",
-				"servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota",
-				"servicequotas:RequestServiceQuotaIncrease"
+				"servicequotas:*"
 			],
 			"Resource": "*"
 		},
@@ -266,88 +139,13 @@
 			"Sid": "IAMRoleManagement",
 			"Effect": "Allow",
 			"Action": [
-				"iam:CreateRole",
-				"iam:DeleteRole",
-				"iam:AttachRolePolicy",
-				"iam:DetachRolePolicy",
-				"iam:PutRolePolicy",
-				"iam:DeleteRolePolicy",
-				"iam:GetRole",
-				"iam:GetRolePolicy",
-				"iam:CreateInstanceProfile",
-				"iam:DeleteInstanceProfile",
-				"iam:AddRoleToInstanceProfile",
-				"iam:RemoveRoleFromInstanceProfile",
-				"iam:TagRole",
-				"iam:UntagRole"
+				"iam:*Role*",
+				"iam:*InstanceProfile*"
 			],
 			"Resource": [
-				"arn:aws:iam::<ACCOUNT_ID>:role/Scotustician*",
-				"arn:aws:iam::<ACCOUNT_ID>:instance-profile/Scotustician*"
+				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*",
+				"arn:aws:iam::${AWS_ACCOUNT_ID}:instance-profile/${PROJECT_NAME}*"
 			]
-		},
-		{
-			"Sid": "EventsManagement",
-			"Effect": "Allow",
-			"Action": [
-				"events:PutRule",
-				"events:DeleteRule",
-				"events:DescribeRule",
-				"events:PutTargets",
-				"events:RemoveTargets",
-				"events:ListTargetsByRule"
-			],
-			"Resource": [
-				"arn:aws:events:<REGION>:<ACCOUNT_ID>:rule/Scotustician*"
-			]
-		},
-		{
-			"Sid": "CloudWatchMetrics",
-			"Effect": "Allow",
-			"Action": [
-				"cloudwatch:PutMetricFilter",
-				"cloudwatch:DeleteMetricFilter",
-				"cloudwatch:PutMetricAlarm",
-				"cloudwatch:DeleteAlarms",
-				"cloudwatch:DescribeAlarms"
-			],
-			"Resource": [
-				"arn:aws:cloudwatch:<REGION>:<ACCOUNT_ID>:alarm:Scotustician*"
-			]
-		},
-		{
-			"Sid": "S3ScotusticianBucket",
-			"Effect": "Allow",
-			"Action": [
-				"s3:GetObject",
-				"s3:PutObject",
-				"s3:DeleteObject",
-				"s3:ListBucket"
-			],
-			"Resource": [
-				"arn:aws:s3:::scotustician",
-				"arn:aws:s3:::scotustician/*"
-			]
-		},
-		{
-			"Sid": "AllowPassRoleForScotusticianTasks",
-			"Effect": "Allow",
-			"Action": [
-				"iam:PassRole"
-			],
-			"Resource": [
-				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianIngestStack-IngestTaskDef*",
-				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersCpuTaskDef*",
-				"arn:aws:iam::<ACCOUNT_ID>:role/ScotusticianTransformersS-TransformersGpuTaskDef*"
-			]
-		},
-		{
-			"Sid": "AllowDetachNetworkInterface",
-			"Effect": "Allow",
-			"Action": [
-				"ec2:DetachNetworkInterface"
-			],
-			"Resource": "arn:aws:ec2:<REGION>:<ACCOUNT_ID>:network-interface/eni-*"
 		}
 	]
 }
