@@ -130,9 +130,17 @@ export class ScotusticianSharedStack extends cdk.Stack {
           `#!/bin/bash`,
           `echo "ECS_CLUSTER=${this.transformersGpuCluster!.clusterName}" >> /etc/ecs/ecs.config`,
           `echo "ECS_ENABLE_GPU_SUPPORT=true" >> /etc/ecs/ecs.config`,
+          `echo "ECS_SPOT_INSTANCE_DRAINING_ENABLED=true" >> /etc/ecs/ecs.config`,
           `systemctl enable --now ecs`,
         ].join('\n')),
-      } as any); // Force inclusion with `as any` because CDK types don't know this key
+        instanceMarketOptions: {
+          marketType: 'spot',
+          spotOptions: {
+            spotInstanceType: 'one-time',
+            instanceInterruptionBehavior: 'terminate',
+          },
+        },
+      } as any); // Using 'as any' to include instanceMarketOptions for spot instance configuration
 
 
 
@@ -178,7 +186,7 @@ export class ScotusticianSharedStack extends cdk.Stack {
     const cpuAmi = ecs.EcsOptimizedImage.amazonLinux2().getImage(this).imageId;
 
     // Use larger instance type for CPU-based transformer workloads
-    const cpuInstance = new ec2.CfnInstance(this, 'CpuInstance', {
+    const cpuInstance = new ec2.CfnInstance(this, 'CpuSpotInstance', {
       imageId: cpuAmi,
       instanceType: 'c5.2xlarge', // 8 vCPU, 16 GB RAM for better CPU performance
       subnetId: this.vpc.publicSubnets[0].subnetId,
@@ -187,15 +195,23 @@ export class ScotusticianSharedStack extends cdk.Stack {
         roles: [cpuInstanceRole.roleName],
       }).ref,
       tags: [
-        { key: 'Name', value: 'ScotusticianTransformersCpu' },
+        { key: 'Name', value: 'ScotusticianTransformersCpuSpot' },
         { key: 'AutoStop', value: 'true' },
       ],
       userData: cdk.Fn.base64([
         `#!/bin/bash`,
         `echo "ECS_CLUSTER=${this.transformersCpuCluster.clusterName}" >> /etc/ecs/ecs.config`,
+        `echo "ECS_SPOT_INSTANCE_DRAINING_ENABLED=true" >> /etc/ecs/ecs.config`,
         `systemctl enable --now ecs`,
       ].join('\n')),
-    });
+      instanceMarketOptions: {
+        marketType: 'spot',
+        spotOptions: {
+          spotInstanceType: 'one-time',
+          instanceInterruptionBehavior: 'terminate',
+        },
+      },
+    } as any); // Using 'as any' to include instanceMarketOptions for spot instance configuration
 
     cdk.Tags.of(cpuInstance).add('AutoStop', 'true');
 
