@@ -91,17 +91,34 @@
       "Sid": "EC2Management",
       "Effect": "Allow",
       "Action": [
-        "ec2:Describe*",
         "ec2:RunInstances",
         "ec2:TerminateInstances",
         "ec2:CreateTags",
-        "ec2:*SecurityGroup*"
+        "ec2:*SecurityGroup*",
+        "ec2:DescribeInstances",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs"
       ],
       "Resource": "*",
       "Condition": {
         "StringEquals": {
           "aws:RequestedRegion": "${AWS_REGION}",
           "aws:RequestTag/Project": "${PROJECT_TAG_VALUE}"
+        }
+      }
+    },
+    {
+      "Sid": "EC2ReadOnlyGlobal",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeRegions"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
         }
       }
     },
