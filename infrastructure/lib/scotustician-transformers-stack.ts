@@ -28,8 +28,6 @@ export class ScotusticianTransformersStack extends Stack {
 
     // Apply resource tags to entire stack
     Tags.of(this).add('Project', 'scotustician');
-    Tags.of(this).add('ManagedBy', 'root-user');
-    Tags.of(this).add('Environment', props?.env?.account ? 'production' : 'development');
     Tags.of(this).add('Stack', 'transformers');
 
     // Configure resources - optimized for transformer workloads

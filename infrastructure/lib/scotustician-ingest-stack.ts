@@ -28,13 +28,11 @@ export class ScotusticianIngestStack extends Stack {
 
     // Apply resource tags to entire stack
     Tags.of(this).add('Project', 'scotustician');
-    Tags.of(this).add('ManagedBy', 'root-user');
-    Tags.of(this).add('Environment', props?.env?.account ? 'production' : 'development');
     Tags.of(this).add('Stack', 'ingest');
 
-    // Configure resources - reduced for rate-limited ingestion
-    const taskCpu = 512; // Reduced from 4096
-    const taskMemory = 2048; // Reduced from 16384
+    // Reduced for rate-limited ingestion
+    const taskCpu = 512;
+    const taskMemory = 2048;
 
     const bucket = s3.Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
