@@ -38,6 +38,9 @@ export class ScotusticianIngestStack extends Stack {
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
       directory: '../ingest',
+      buildArgs: {
+        BUILD_TIMESTAMP: Date.now().toString()
+      },
     });
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
