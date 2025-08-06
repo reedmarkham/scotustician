@@ -1,40 +1,31 @@
 # scotustician
 
-**scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions.
+**scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions. The goal with generating these embeddings is that we can then understand the workings of the Court in a more quantitative way.
 
-[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system for interacting with SCOTUS OA transcripts using vector representations (text embeddings) rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
+[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system to enable data-driven interaction with SCOTUS OA transcripts rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
 
-This pipeline supports downstream tasks such as semantic search, clustering, and interactive visualization by transforming transcripts into structured embeddings. The system uses [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model by default, which generates 1024d embeddings optimized for semantic retrieval.
-
----
-
-## System Design
-![scotustician](/scotustician-architecture.svg)
-```
-scotustician/
-├── ingest/            	# Containerized task to ingest raw data from Oyez.org API to S3
-├── transformers/      	# Containerized task for generating and storing text embeddings in PostgreSQL
-├── infrastructure/             	# AWS CDK code defining ECS services and other infrastructure
-└── .github/workflows/ 	# CI/CD pipelines via GitHub Actions
-```
-- AWS CDK (TypeScript) provisions clusters, networking, and ECS tasks using Docker images.
-- ECS Fargate task for `ingest` parallelizes ingestion of JSON data from Oyez.org API to S3 using Python, logging 'junk' and other pipeline info to the bucket for audit.
-- ECS EC2 task with GPU support for `transformers` (separate tasks available conditional on GPU availability) that also serializes and stores transcript data as XML files on S3.
-- Shared infrastructure (e.g., EC2 instance, security groups) for GPU tasks is also conditionally deployed in the above stack.
-- GitHub Actions CI/CD wrapping the logic and `cdk` steps for above - after a few prerequisites, outlined below.
+The embeddings from this pipeline support downstream tasks such as semantic search, clustering, and interactive visualization. I have chosen to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d text embeddings, due to its strong reputation for similar tasks such as semantic retrieval.
 
 Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses the baai/bge-m3 model to generate embeddings. 
+2. Processed text from `ingest` on S3 is read by `transformers`, which uses the `baai/bge-m3` model within Hugging Face Transformers to generate embeddings. 
 * Also serialized data (XML) for the transcript is written out to S3.
-3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which was deployed separately.
+3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which has been deployed separately.
 
-After tasks complete, the S3 bucket should (depending on any actual "junk" data) look like:
+```
+scotustician/
+├── ingest/            	# Python code to ingest raw data from Oyez.org API to S3
+├── transformers/      	# Python code to generate and store text embeddings in PostgreSQL
+├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
+└── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
+```
+
+After tasks complete, the S3 bucket looks like:
 ```
 scotustician/
 ├── raw/oa/      	  # Raw oral argument JSON files
-├── xml/              # Serialized XML for the oral argument transcripts
-├── junk/      		  # Raw oral argument JSON files missing key data or malformed
+├── xml/            # Serialized XML for the oral argument transcripts
+├── junk/      		  # Raw oral argument JSON files *if* missing key data, malformed, etc.
 ├── logs/       	  # JSON representations of pipeline metrics, later to be queried in Athena, etc.
 ```
 ---
