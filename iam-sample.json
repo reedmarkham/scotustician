@@ -1,151 +1,207 @@
 {
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "CloudFormationAccess",
-			"Effect": "Allow",
-			"Action": [
-				"cloudformation:*"
-			],
-			"Resource": [
-				"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${PROJECT_NAME}*",
-				"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/CDKToolkit/*"
-			]
-		},
-		{
-			"Sid": "CloudFormationGlobal",
-			"Effect": "Allow",
-			"Action": [
-				"cloudformation:ListStacks",
-				"cloudformation:ValidateTemplate"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "CDKAndS3Access",
-			"Effect": "Allow",
-			"Action": [
-				"s3:*"
-			],
-			"Resource": [
-				"arn:aws:s3:::${CDK_ASSETS_BUCKET}",
-				"arn:aws:s3:::${CDK_ASSETS_BUCKET}/*",
-				"arn:aws:s3:::${PROJECT_S3_BUCKET}",
-				"arn:aws:s3:::${PROJECT_S3_BUCKET}/*"
-			]
-		},
-		{
-			"Sid": "IAMPassRole",
-			"Effect": "Allow",
-			"Action": [
-				"iam:PassRole",
-				"sts:AssumeRole"
-			],
-			"Resource": [
-				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CDK_EXEC_ROLE_PREFIX}*",
-				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*"
-			]
-		},
-		{
-			"Sid": "ECSManagement",
-			"Effect": "Allow",
-			"Action": [
-				"ecs:*"
-			],
-			"Resource": [
-				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:cluster/${PROJECT_NAME_LOWER}-*",
-				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:service/${PROJECT_NAME_LOWER}-*/*",
-				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task/${PROJECT_NAME_LOWER}-*/*",
-				"arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task-definition/${PROJECT_NAME}*:*"
-			]
-		},
-		{
-			"Sid": "EC2Management",
-			"Effect": "Allow",
-			"Action": [
-				"ec2:Describe*",
-				"ec2:*Instances",
-				"ec2:CreateTags",
-				"ec2:*SecurityGroup*",
-				"ec2:*Vpc*",
-				"ec2:*Subnet*",
-				"ec2:*InternetGateway*",
-				"ec2:*Route*",
-				"ec2:*NetworkInterface*"
-			],
-			"Resource": "*",
-			"Condition": {
-				"StringEquals": {
-					"aws:RequestTag/Project": "${PROJECT_TAG_VALUE}"
-				}
-			}
-		},
-		{
-			"Sid": "ECRAccess",
-			"Effect": "Allow",
-			"Action": [
-				"ecr:*"
-			],
-			"Resource": [
-				"arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${CDK_CONTAINER_ASSETS_PREFIX}*",
-				"arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${PROJECT_NAME_LOWER}-*"
-			]
-		},
-		{
-			"Sid": "ECRAuthToken",
-			"Effect": "Allow",
-			"Action": [
-				"ecr:GetAuthorizationToken"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "LogsAndMonitoring",
-			"Effect": "Allow",
-			"Action": [
-				"logs:*",
-				"cloudwatch:*",
-				"events:*"
-			],
-			"Resource": [
-				"arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:*${PROJECT_NAME_LOWER}*",
-				"arn:aws:cloudwatch:${AWS_REGION}:${AWS_ACCOUNT_ID}:alarm:${PROJECT_NAME}*",
-				"arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${PROJECT_NAME}*"
-			]
-		},
-		{
-			"Sid": "ParametersAndSecrets",
-			"Effect": "Allow",
-			"Action": [
-				"ssm:*Parameter*",
-				"secretsmanager:GetSecretValue",
-				"secretsmanager:DescribeSecret"
-			],
-			"Resource": [
-				"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/cdk-bootstrap/*",
-				"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${PROJECT_NAME_LOWER}/*",
-				"arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:${PROJECT_NAME_LOWER}-db-credentials*"
-			]
-		},
-		{
-			"Sid": "ServiceQuotasAccess",
-			"Effect": "Allow",
-			"Action": [
-				"servicequotas:*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "IAMRoleManagement",
-			"Effect": "Allow",
-			"Action": [
-				"iam:*Role*",
-				"iam:*InstanceProfile*"
-			],
-			"Resource": [
-				"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*",
-				"arn:aws:iam::${AWS_ACCOUNT_ID}:instance-profile/${PROJECT_NAME}*"
-			]
-		}
-	]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFormationAccess",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:GetTemplate",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:DeleteChangeSet"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${PROJECT_NAME}*",
+        "arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/CDKToolkit/*"
+      ]
+    },
+    {
+      "Sid": "CloudFormationGlobal",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ListStacks",
+        "cloudformation:ValidateTemplate"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CDKAndS3Access",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketNotification",
+        "s3:PutBucketNotification"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${CDK_ASSETS_BUCKET}",
+        "arn:aws:s3:::${CDK_ASSETS_BUCKET}/*",
+        "arn:aws:s3:::${PROJECT_S3_BUCKET}",
+        "arn:aws:s3:::${PROJECT_S3_BUCKET}/*"
+      ]
+    },
+    {
+      "Sid": "IAMPassRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole",
+        "sts:AssumeRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CDK_EXEC_ROLE_PREFIX}*",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*"
+      ]
+    },
+    {
+      "Sid": "ECSManagement",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:UpdateService",
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:DescribeTaskDefinition",
+        "ecs:RegisterTaskDefinition",
+        "ecs:DeregisterTaskDefinition",
+        "ecs:RunTask",
+        "ecs:StopTask",
+        "ecs:DescribeClusters",
+        "ecs:CreateService",
+        "ecs:DeleteService"
+      ],
+      "Resource": [
+        "arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:cluster/${PROJECT_NAME_LOWER}-*",
+        "arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:service/${PROJECT_NAME_LOWER}-*/*",
+        "arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task/${PROJECT_NAME_LOWER}-*/*",
+        "arn:aws:ecs:${AWS_REGION}:${AWS_ACCOUNT_ID}:task-definition/${PROJECT_NAME}*:*"
+      ]
+    },
+    {
+      "Sid": "EC2Management",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:*SecurityGroup*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}",
+          "aws:RequestTag/Project": "${PROJECT_TAG_VALUE}"
+        }
+      }
+    },
+    {
+      "Sid": "ECRAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:*"
+      ],
+      "Resource": [
+        "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${CDK_CONTAINER_ASSETS_PREFIX}*",
+        "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${PROJECT_NAME_LOWER}-*"
+      ]
+    },
+    {
+      "Sid": "ECRAuthToken",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "LogsAndMonitoring",
+      "Effect": "Allow",
+      "Action": [
+        "logs:*",
+        "cloudwatch:*",
+        "events:*"
+      ],
+      "Resource": [
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:*${PROJECT_NAME_LOWER}*",
+        "arn:aws:cloudwatch:${AWS_REGION}:${AWS_ACCOUNT_ID}:alarm:${PROJECT_NAME}*",
+        "arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${PROJECT_NAME}*"
+      ]
+    },
+    {
+      "Sid": "ParametersAndSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:*Parameter*",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": [
+        "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/cdk-bootstrap/*",
+        "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${PROJECT_NAME_LOWER}/*",
+        "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:${PROJECT_NAME_LOWER}-db-credentials*"
+      ]
+    },
+    {
+      "Sid": "ServiceQuotasReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "servicequotas:Get*",
+        "servicequotas:List*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "IAMRoleManagement",
+      "Effect": "Allow",
+      "Action": [
+        "iam:*Role*",
+        "iam:*InstanceProfile*"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}*",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:instance-profile/${PROJECT_NAME}*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "DenyDangerousActions",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*User*",
+        "iam:*AccessKey*",
+        "organizations:*",
+        "account:*",
+        "billing:*"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
