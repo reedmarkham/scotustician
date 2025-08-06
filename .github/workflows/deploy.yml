@@ -86,13 +86,6 @@ jobs:
             echo "gpu_quota=$output" >> $GITHUB_OUTPUT
           fi
 
-      - name: Clean up existing changeset
-        run: |
-          cd infrastructure
-          aws cloudformation delete-change-set \
-            --stack-name ScotusticianSharedStack \
-            --change-set-name cdk-deploy-change-set 2>/dev/null || true
-
       - name: Deploy shared stack
         run: |
           cd infrastructure
@@ -110,7 +103,7 @@ jobs:
             $CONTEXT \
             --outputs-file cdk-outputs-shared.json \
             --require-approval never \
-            --force
+            --method direct
 
       - name: Upload shared outputs
         uses: actions/upload-artifact@v4
@@ -155,13 +148,6 @@ jobs:
           path: infrastructure
         continue-on-error: true
 
-      - name: Clean up existing changeset
-        run: |
-          cd infrastructure
-          aws cloudformation delete-change-set \
-            --stack-name ScotusticianIngestStack \
-            --change-set-name cdk-deploy-change-set 2>/dev/null || true
-
       - run: |
           cd infrastructure
           npx cdk deploy ScotusticianIngestStack \
@@ -169,7 +155,7 @@ jobs:
             --toolkit-stack-name $TOOLKIT_STACK \
             --outputs-file cdk-outputs-ingest.json \
             --require-approval never \
-            --force
+            --method direct
 
       - name: Upload ingest outputs
         uses: actions/upload-artifact@v4
@@ -226,13 +212,6 @@ jobs:
             echo "gpu_quota=$output" >> $GITHUB_OUTPUT
           fi
 
-      - name: Clean up existing changeset
-        run: |
-          cd infrastructure
-          aws cloudformation delete-change-set \
-            --stack-name ScotusticianTransformersStack \
-            --change-set-name cdk-deploy-change-set 2>/dev/null || true
-
       - name: Deploy transformers stack
         run: |
           cd infrastructure
@@ -250,7 +229,7 @@ jobs:
             $CONTEXT \
             --outputs-file cdk-outputs-transformers.json \
             --require-approval never \
-            --force
+            --method direct
 
       - name: Upload transformers outputs
         uses: actions/upload-artifact@v4
