@@ -1,9 +1,10 @@
-import logging, io, json, os
+import logging, io, json, os, time
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from typing import List, Dict
 import xml.etree.ElementTree as ET
 from tqdm import tqdm
+import threading
 
 import boto3, botocore.exceptions
 from transformers import AutoTokenizer
@@ -18,6 +19,48 @@ logging.basicConfig(level=logging.INFO)
 s3 = boto3.client("s3")
 MODEL_NAME = os.environ.get('MODEL_NAME', 'baai/bge-m3')
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+# Import shutdown_requested from main module to check for interruptions
+# This will be set by the main module's signal handler
+try:
+    from main import shutdown_requested
+except ImportError:
+    # Create a dummy event if running helpers standalone
+    shutdown_requested = threading.Event()
+
+def save_processing_checkpoint(processed_keys: set, checkpoint_file: str = "/tmp/scotustician_checkpoint.json"):
+    """Save processing checkpoint to allow resumption after interruption"""
+    try:
+        import json
+        checkpoint_data = {
+            'processed_keys': list(processed_keys),
+            'timestamp': time.time()
+        }
+        with open(checkpoint_file, 'w') as f:
+            json.dump(checkpoint_data, f)
+        logger.debug(f"Checkpoint saved with {len(processed_keys)} processed keys")
+    except Exception as e:
+        logger.warning(f"Failed to save checkpoint: {e}")
+
+def load_processing_checkpoint(checkpoint_file: str = "/tmp/scotustician_checkpoint.json") -> set:
+    """Load processing checkpoint to resume from where we left off"""
+    try:
+        import json
+        import time
+        with open(checkpoint_file, 'r') as f:
+            checkpoint_data = json.load(f)
+        
+        # Only use checkpoint if it's less than 24 hours old
+        if time.time() - checkpoint_data.get('timestamp', 0) < 86400:
+            processed_keys = set(checkpoint_data.get('processed_keys', []))
+            logger.info(f"Loaded checkpoint with {len(processed_keys)} processed keys")
+            return processed_keys
+        else:
+            logger.info("Checkpoint too old, starting fresh")
+            return set()
+    except Exception as e:
+        logger.debug(f"No valid checkpoint found: {e}")
+        return set()
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     logger.info(f"Downloading transcript from s3://{bucket}/{key}")
@@ -43,9 +86,18 @@ def get_transcript_s3(bucket: str, key: str) -> str:
             for turn in section.get("turns", [])
         )
         
-        with tqdm(total=total_blocks, desc="Converting to XML", unit="blocks") as pbar:
+        with tqdm(total=total_blocks, desc="Converting to XML", unit="blocks", 
+                 disable=shutdown_requested.is_set()) as pbar:
             for section in sections:
+                if shutdown_requested.is_set():
+                    logger.info("Shutdown requested during XML conversion")
+                    raise InterruptedError("Processing interrupted during XML conversion")
+                
                 for turn in section.get("turns", []):
+                    if shutdown_requested.is_set():
+                        logger.info("Shutdown requested during turn processing")
+                        raise InterruptedError("Processing interrupted during turn processing")
+                        
                     speaker = turn.get("speaker", {}).get("name", "Unknown")
                     # speaker_id = str(turn.get("speaker", {}).get("id", ""))  # Commented out - not needed for embeddings
                     for block in turn.get("text_blocks", []):
@@ -130,12 +182,20 @@ def process_transcript_with_chunking(
         logger.info(f"Processing {len(sections)} sections...")
         
         for section_id, section in enumerate(sections):
+            if shutdown_requested.is_set():
+                logger.info(f"Shutdown requested during section {section_id} processing")
+                raise InterruptedError(f"Processing interrupted at section {section_id}")
+                
             section_utterances = []
             section_texts = []
             start_utterance_idx = global_utterance_idx
             
             # Process all turns in this section
             for turn in section.get("turns", []):
+                if shutdown_requested.is_set():
+                    logger.info(f"Shutdown requested during turn processing in section {section_id}")
+                    raise InterruptedError(f"Processing interrupted during turn in section {section_id}")
+                    
                 speaker = turn.get("speaker", {}).get("name", "Unknown")
                 speaker_id = str(turn.get("speaker", {}).get("id", ""))
                 
@@ -200,7 +260,15 @@ def process_transcript_with_chunking(
         logger.info(f"Processed {len(all_utterances_data)} total utterances across {len(section_chunks)} sections.")
         
         # Insert raw utterance data to oa_text table
+        if shutdown_requested.is_set():
+            logger.info("Shutdown requested before database insert")
+            raise InterruptedError("Processing interrupted before database insert")
+            
         insert_oa_text_data(all_utterances_data, conn)
+        
+        if shutdown_requested.is_set():
+            logger.info("Shutdown requested before embedding generation")
+            raise InterruptedError("Processing interrupted before embedding generation")
         
         # Generate embeddings for section chunks
         logger.info(f"Generating embeddings for {len(section_chunks)} section chunks...")
@@ -208,7 +276,22 @@ def process_transcript_with_chunking(
         model.eval()
         
         chunk_texts = [chunk['chunk_text'] for chunk in section_chunks]
-        embeddings = model.encode(chunk_texts, batch_size=batch_size, show_progress_bar=True, convert_to_tensor=False)
+        
+        # Check for interruption before the expensive embedding generation
+        if shutdown_requested.is_set():
+            logger.info("Shutdown requested during embedding model preparation")
+            raise InterruptedError("Processing interrupted during embedding model preparation")
+        
+        embeddings = model.encode(
+            chunk_texts, 
+            batch_size=batch_size, 
+            show_progress_bar=not shutdown_requested.is_set(), 
+            convert_to_tensor=False
+        )
+        
+        if shutdown_requested.is_set():
+            logger.info("Shutdown requested after embedding generation")
+            raise InterruptedError("Processing interrupted after embedding generation")
         
         # Add embeddings and metadata to chunks
         for chunk, emb in zip(section_chunks, embeddings):

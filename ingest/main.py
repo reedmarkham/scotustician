@@ -1,8 +1,11 @@
 import os
+import signal
+import sys
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import time
+import threading
 
 from helpers import (
     get_existing_oa_ids,
@@ -24,13 +27,41 @@ MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
 
+# Global shutdown flag
+shutdown_requested = threading.Event()
+active_futures = set()
+executor_lock = threading.Lock()
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    signal_name = signal.Signals(signum).name
+    logger.info(f"Received {signal_name} signal. Initiating graceful shutdown...")
+    shutdown_requested.set()
+
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    logger.info("Signal handlers configured for graceful shutdown")
+
 def main() -> None:
+    # Setup signal handlers first
+    setup_signal_handlers()
+    
     logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS}")
     start_time = time.time()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
+    if shutdown_requested.is_set():
+        logger.info("Shutdown requested before processing started")
+        return
+    
     logger.info("Scanning S3 bucket for existing oral arguments...")
     existing_oa_ids = get_existing_oa_ids()
+    
+    if shutdown_requested.is_set():
+        logger.info("Shutdown requested after scanning S3")
+        return
     
     tasks = []
     diff_stats = {
@@ -46,13 +77,21 @@ def main() -> None:
     total_uploaded = 0
     total_bytes = 0
 
-    for term in tqdm(range(START_TERM, END_TERM), desc="Gathering tasks by term"):
+    for term in tqdm(range(START_TERM, END_TERM), desc="Gathering tasks by term", 
+                    disable=shutdown_requested.is_set()):
+        if shutdown_requested.is_set():
+            logger.info(f"Shutdown requested during term {term} processing")
+            break
+            
         try:
             cases = get_cases_by_term(term)
             if not cases:
                 logger.warning(f"No cases returned for term {term}")
                 continue
             for case in cases:
+                if shutdown_requested.is_set():
+                    logger.info(f"Shutdown requested during case processing in term {term}")
+                    break
                 cases_total += 1
 
                 if not isinstance(case, dict):
@@ -95,21 +134,73 @@ def main() -> None:
     logger.info(f"  - New OAs to download: {diff_stats['new_oas_to_download']}")
     logger.info(f"  - Percentage new: {(diff_stats['new_oas_to_download'] / max(diff_stats['total_oas_checked'], 1) * 100):.1f}%")
     
-    if len(tasks) == 0:
+    if shutdown_requested.is_set():
+        logger.info("Shutdown requested before task processing")
+    elif len(tasks) == 0:
         logger.info("\nNo new oral arguments to download. S3 bucket is up to date!")
     else:
         logger.info(f"\nDispatching {len(tasks)} new oral argument tasks to thread pool...")
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(process_oa, *args) for args in tasks]
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing OAs"):
-            try:
-                size_mb = future.result()
-                if size_mb is not None:
-                    total_uploaded += 1
-                    total_bytes += size_mb
-            except Exception as e:
-                logger.error(f"Exception during task: {e}", exc_info=True)
+        
+        interrupted_count = 0
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                # Submit all futures and track them
+                futures = {}
+                for args in tasks:
+                    if shutdown_requested.is_set():
+                        logger.info("Shutdown requested during task submission")
+                        break
+                    future = executor.submit(process_oa, *args)
+                    futures[future] = args
+                    with executor_lock:
+                        active_futures.add(future)
+                
+                completed_futures = set()
+                pbar = tqdm(total=len(futures), desc="Processing OAs", 
+                           disable=shutdown_requested.is_set())
+                
+                while futures and not shutdown_requested.is_set():
+                    try:
+                        for future in as_completed(futures.keys(), timeout=1.0):
+                            if future in completed_futures:
+                                continue
+                                
+                            completed_futures.add(future)
+                            with executor_lock:
+                                active_futures.discard(future)
+                            
+                            try:
+                                size_mb = future.result()
+                                if size_mb is not None:
+                                    total_uploaded += 1
+                                    total_bytes += size_mb
+                            except Exception as e:
+                                logger.error(f"Exception during task: {e}", exc_info=True)
+                            
+                            pbar.update(1)
+                            
+                            if len(completed_futures) == len(futures):
+                                break
+                    
+                    except TimeoutError:
+                        continue
+                
+                pbar.close()
+                
+                if shutdown_requested.is_set():
+                    logger.info("Shutdown requested, cancelling remaining tasks...")
+                    cancelled_count = 0
+                    with executor_lock:
+                        for future in list(active_futures):
+                            if future.cancel():
+                                cancelled_count += 1
+                    
+                    interrupted_count = len(futures) - len(completed_futures)
+                    logger.info(f"Cancelled {cancelled_count} tasks, {interrupted_count} tasks interrupted")
+        
+        except KeyboardInterrupt:
+            logger.info("KeyboardInterrupt received during processing")
+            shutdown_requested.set()
 
     duration = time.time() - start_time
 
@@ -128,15 +219,26 @@ def main() -> None:
         "total_oas_checked": diff_stats["total_oas_checked"],
         "existing_oas_skipped": diff_stats["existing_oas_skipped"],
         "new_oas_downloaded": diff_stats["new_oas_to_download"],
+        "interrupted": shutdown_requested.is_set()
     }
 
     logger.info("Ingestion Summary:")
     for k, v in summary.items():
         logger.info(f"• {k.replace('_', ' ').capitalize()}: {v}")
-
-    write_summary_to_s3(summary, timestamp)
     
-    print_sample_data_validation(total_uploaded)
+    if shutdown_requested.is_set():
+        logger.info("Process was interrupted by shutdown signal")
+        logger.info("Remaining files will be processed on next run (incremental mode)")
+
+    if not shutdown_requested.is_set():
+        write_summary_to_s3(summary, timestamp)
+        print_sample_data_validation(total_uploaded)
+    
+    # Exit with appropriate code
+    if shutdown_requested.is_set():
+        sys.exit(130)  # 128 + SIGINT (2) - standard convention for interrupted processes
+    else:
+        sys.exit(0)    # All processing completed
 
 if __name__ == "__main__":
     main()
