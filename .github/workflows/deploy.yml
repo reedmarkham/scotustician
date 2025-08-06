@@ -74,6 +74,28 @@ jobs:
 
       - run: cd infrastructure && npm ci
 
+      - name: Check and recover from rollback state
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ScotusticianSharedStack \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+          
+          echo "Current stack status: $STACK_STATUS"
+          
+          if [[ "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing rollback..."
+            aws cloudformation continue-update-rollback \
+              --stack-name ScotusticianSharedStack
+            
+            echo "Waiting for rollback to complete..."
+            aws cloudformation wait stack-update-complete \
+              --stack-name ScotusticianSharedStack || true
+          elif [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
+            echo "WARNING: Stack in ROLLBACK_COMPLETE state - manual deletion required"
+            echo "To fix: Delete the stack manually and re-run this workflow"
+            exit 1
+          fi
+
       - name: Check GPU quota
         id: gpu_check
         run: |
@@ -141,6 +163,28 @@ jobs:
 
       - run: cd infrastructure && npm ci
 
+      - name: Check and recover from rollback state
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ScotusticianIngestStack \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+          
+          echo "Current stack status: $STACK_STATUS"
+          
+          if [[ "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing rollback..."
+            aws cloudformation continue-update-rollback \
+              --stack-name ScotusticianIngestStack
+            
+            echo "Waiting for rollback to complete..."
+            aws cloudformation wait stack-update-complete \
+              --stack-name ScotusticianIngestStack || true
+          elif [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
+            echo "WARNING: Stack in ROLLBACK_COMPLETE state - manual deletion required"
+            echo "To fix: Delete the stack manually and re-run this workflow"
+            exit 1
+          fi
+
       - name: Download shared outputs
         uses: actions/download-artifact@v4
         with:
@@ -192,6 +236,28 @@ jobs:
           node-version: '20'
 
       - run: cd infrastructure && npm ci
+
+      - name: Check and recover from rollback state
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ScotusticianTransformersStack \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+          
+          echo "Current stack status: $STACK_STATUS"
+          
+          if [[ "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing rollback..."
+            aws cloudformation continue-update-rollback \
+              --stack-name ScotusticianTransformersStack
+            
+            echo "Waiting for rollback to complete..."
+            aws cloudformation wait stack-update-complete \
+              --stack-name ScotusticianTransformersStack || true
+          elif [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
+            echo "WARNING: Stack in ROLLBACK_COMPLETE state - manual deletion required"
+            echo "To fix: Delete the stack manually and re-run this workflow"
+            exit 1
+          fi
 
       - name: Download shared outputs
         uses: actions/download-artifact@v4
