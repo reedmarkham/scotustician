@@ -1,4 +1,4 @@
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -25,6 +25,12 @@ export class ScotusticianIngestStack extends Stack {
       ...props,
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
+
+    // Apply resource tags to entire stack
+    Tags.of(this).add('Project', 'scotustician');
+    Tags.of(this).add('ManagedBy', 'root-user');
+    Tags.of(this).add('Environment', props?.env?.account ? 'production' : 'development');
+    Tags.of(this).add('Stack', 'ingest');
 
     // Configure resources - reduced for rate-limited ingestion
     const taskCpu = 512; // Reduced from 4096

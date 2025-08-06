@@ -19,6 +19,12 @@ export class ScotusticianSharedStack extends cdk.Stack {
       synthesizer: new cdk.DefaultStackSynthesizer({ qualifier }),
     });
 
+    // Apply resource tags to entire stack
+    cdk.Tags.of(this).add('Project', 'scotustician');
+    cdk.Tags.of(this).add('ManagedBy', 'root-user');
+    cdk.Tags.of(this).add('Environment', props?.env?.account ? 'production' : 'development');
+    cdk.Tags.of(this).add('Stack', 'shared');
+
     // --- VPC + Cluster ---
     this.vpc = new ec2.Vpc(this, 'ScotusticianVpc', {
       maxAzs: 2,

@@ -14,7 +14,12 @@
 				"cloudformation:DeleteStack",
 				"cloudformation:UpdateStack"
 			],
-			"Resource": "*"
+			"Resource": [
+				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianSharedStack/*",
+				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianIngestStack/*",
+				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/ScotusticianTransformersStack/*",
+				"arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/CDKToolkit/*"
+			]
 		},
 		{
 			"Sid": "CDKBootstrapAssets",
@@ -39,48 +44,119 @@
 			"Resource": "arn:aws:iam::<ACCOUNT_ID>:role/cdk-sctstcn-cfn-exec-role-*"
 		},
 		{
-			"Sid": "ECSManagement",
+			"Sid": "ECSClusterManagement",
 			"Effect": "Allow",
 			"Action": [
 				"ecs:CreateCluster",
 				"ecs:DeleteCluster",
 				"ecs:DescribeClusters",
+				"ecs:ListClusters",
+				"ecs:TagResource",
+				"ecs:UntagResource"
+			],
+			"Resource": [
+				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:cluster/scotustician-*"
+			]
+		},
+		{
+			"Sid": "ECSServiceManagement",
+			"Effect": "Allow",
+			"Action": [
 				"ecs:CreateService",
 				"ecs:UpdateService",
 				"ecs:DeleteService",
-				"ecs:DescribeServices",
+				"ecs:DescribeServices"
+			],
+			"Resource": [
+				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:service/scotustician-*/*"
+			]
+		},
+		{
+			"Sid": "ECSTaskManagement",
+			"Effect": "Allow",
+			"Action": [
 				"ecs:RegisterTaskDefinition",
 				"ecs:DeregisterTaskDefinition",
 				"ecs:DescribeTaskDefinition",
-				"ecs:ListTaskDefinitions",
-				"ecs:RunTask",
-				"ecs:StopTask",
-				"ecs:DescribeTasks",
-				"ecs:ListTasks",
-				"ecs:ListClusters",
-				"ecs:CreateCapacityProvider",
-				"ecs:DescribeCapacityProviders",
-				"ecs:TagResource",
-				"ecs:UntagResource"
+				"ecs:ListTaskDefinitions"
 			],
 			"Resource": "*"
 		},
 		{
-			"Sid": "EC2Management",
+			"Sid": "ECSTaskRunning",
 			"Effect": "Allow",
 			"Action": [
-				"ec2:Describe*",
-				"ec2:CreateTags",
+				"ecs:RunTask",
+				"ecs:StopTask",
+				"ecs:DescribeTasks",
+				"ecs:ListTasks"
+			],
+			"Resource": [
+				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task/scotustician-*/*",
+				"arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task-definition/Scotustician*:*"
+			]
+		},
+		{
+			"Sid": "ECSCapacityProviders",
+			"Effect": "Allow",
+			"Action": [
+				"ecs:CreateCapacityProvider",
+				"ecs:DescribeCapacityProviders"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "EC2ReadAccess",
+			"Effect": "Allow",
+			"Action": [
+				"ec2:Describe*"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "EC2InstanceManagement",
+			"Effect": "Allow",
+			"Action": [
 				"ec2:RunInstances",
 				"ec2:StartInstances",
 				"ec2:StopInstances",
 				"ec2:TerminateInstances",
+				"ec2:CreateTags"
+			],
+			"Resource": [
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:instance/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:volume/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:network-interface/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:subnet/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:security-group/*",
+				"arn:aws:ec2:<REGION>::image/*"
+			],
+			"Condition": {
+				"StringEquals": {
+					"aws:RequestTag/Project": "scotustician"
+				}
+			}
+		},
+		{
+			"Sid": "EC2SecurityGroupManagement",
+			"Effect": "Allow",
+			"Action": [
 				"ec2:CreateSecurityGroup",
 				"ec2:DeleteSecurityGroup",
 				"ec2:AuthorizeSecurityGroupIngress",
 				"ec2:AuthorizeSecurityGroupEgress",
 				"ec2:RevokeSecurityGroupIngress",
-				"ec2:RevokeSecurityGroupEgress",
+				"ec2:RevokeSecurityGroupEgress"
+			],
+			"Resource": [
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:security-group/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc/*"
+			]
+		},
+		{
+			"Sid": "EC2VPCManagement",
+			"Effect": "Allow",
+			"Action": [
 				"ec2:CreateVpc",
 				"ec2:DeleteVpc",
 				"ec2:CreateSubnet",
@@ -99,19 +175,38 @@
 				"ec2:DeleteVpcEndpoint",
 				"ec2:ModifyVpcEndpoint"
 			],
+			"Resource": [
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:subnet/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:internet-gateway/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:route-table/*",
+				"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:vpc-endpoint/*"
+			]
+		},
+		{
+			"Sid": "ECRAuthToken",
+			"Effect": "Allow",
+			"Action": [
+				"ecr:GetAuthorizationToken"
+			],
 			"Resource": "*"
 		},
 		{
-			"Sid": "ECRAccess",
+			"Sid": "ECRRepositoryAccess",
 			"Effect": "Allow",
 			"Action": [
-				"ecr:GetAuthorizationToken",
 				"ecr:BatchCheckLayerAvailability",
 				"ecr:GetDownloadUrlForLayer",
 				"ecr:BatchGetImage",
-				"ecr:DescribeRepositories"
+				"ecr:DescribeRepositories",
+				"ecr:PutImage",
+				"ecr:InitiateLayerUpload",
+				"ecr:UploadLayerPart",
+				"ecr:CompleteLayerUpload"
 			],
-			"Resource": "*"
+			"Resource": [
+				"arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/cdk-sctstcn-container-assets-*"
+			]
 		},
 		{
 			"Sid": "LogGroupManagement",
@@ -121,9 +216,14 @@
 				"logs:PutRetentionPolicy",
 				"logs:DescribeLogGroups",
 				"logs:CreateLogStream",
-				"logs:PutLogEvents"
+				"logs:PutLogEvents",
+				"logs:DeleteLogGroup"
 			],
-			"Resource": "*"
+			"Resource": [
+				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/*",
+				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/Scotustician*",
+				"arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:*:log-stream:*"
+			]
 		},
 		{
 			"Sid": "SSMParameterAccess",
@@ -132,9 +232,13 @@
 				"ssm:GetParameter",
 				"ssm:GetParameters",
 				"ssm:PutParameter",
-				"ssm:DescribeParameters"
+				"ssm:DescribeParameters",
+				"ssm:DeleteParameter"
 			],
-			"Resource": "*"
+			"Resource": [
+				"arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/cdk-bootstrap/*",
+				"arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/scotustician/*"
+			]
 		},
 		{
 			"Sid": "SecretsManagerAccess",
@@ -159,6 +263,73 @@
 			"Resource": "*"
 		},
 		{
+			"Sid": "IAMRoleManagement",
+			"Effect": "Allow",
+			"Action": [
+				"iam:CreateRole",
+				"iam:DeleteRole",
+				"iam:AttachRolePolicy",
+				"iam:DetachRolePolicy",
+				"iam:PutRolePolicy",
+				"iam:DeleteRolePolicy",
+				"iam:GetRole",
+				"iam:GetRolePolicy",
+				"iam:CreateInstanceProfile",
+				"iam:DeleteInstanceProfile",
+				"iam:AddRoleToInstanceProfile",
+				"iam:RemoveRoleFromInstanceProfile",
+				"iam:TagRole",
+				"iam:UntagRole"
+			],
+			"Resource": [
+				"arn:aws:iam::<ACCOUNT_ID>:role/Scotustician*",
+				"arn:aws:iam::<ACCOUNT_ID>:instance-profile/Scotustician*"
+			]
+		},
+		{
+			"Sid": "EventsManagement",
+			"Effect": "Allow",
+			"Action": [
+				"events:PutRule",
+				"events:DeleteRule",
+				"events:DescribeRule",
+				"events:PutTargets",
+				"events:RemoveTargets",
+				"events:ListTargetsByRule"
+			],
+			"Resource": [
+				"arn:aws:events:<REGION>:<ACCOUNT_ID>:rule/Scotustician*"
+			]
+		},
+		{
+			"Sid": "CloudWatchMetrics",
+			"Effect": "Allow",
+			"Action": [
+				"cloudwatch:PutMetricFilter",
+				"cloudwatch:DeleteMetricFilter",
+				"cloudwatch:PutMetricAlarm",
+				"cloudwatch:DeleteAlarms",
+				"cloudwatch:DescribeAlarms"
+			],
+			"Resource": [
+				"arn:aws:cloudwatch:<REGION>:<ACCOUNT_ID>:alarm:Scotustician*"
+			]
+		},
+		{
+			"Sid": "S3ScotusticianBucket",
+			"Effect": "Allow",
+			"Action": [
+				"s3:GetObject",
+				"s3:PutObject",
+				"s3:DeleteObject",
+				"s3:ListBucket"
+			],
+			"Resource": [
+				"arn:aws:s3:::scotustician",
+				"arn:aws:s3:::scotustician/*"
+			]
+		},
+		{
 			"Sid": "AllowPassRoleForScotusticianTasks",
 			"Effect": "Allow",
 			"Action": [
@@ -176,7 +347,7 @@
 			"Action": [
 				"ec2:DetachNetworkInterface"
 			],
-			"Resource": "arn:aws:ec2:us-east-1:<ACCOUNT_ID>:network-interface/eni-027ee3ae382ce08b1"
+			"Resource": "arn:aws:ec2:<REGION>:<ACCOUNT_ID>:network-interface/eni-*"
 		}
 	]
 }
