@@ -149,6 +149,19 @@ export class ScotusticianTransformersStack extends Stack {
       resources: ['arn:aws:s3:::scotustician', 'arn:aws:s3:::scotustician/*'],
     }));
 
+    // Restrict ECS task execution to root user only
+    const accountId = this.account;
+    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['ecs:RunTask', 'ecs:StartTask'],
+      resources: ['*'],
+      conditions: {
+        StringNotEquals: {
+          'aws:userid': `${accountId}:root`
+        }
+      }
+    }));
+
     taskDefinition.addToExecutionRolePolicy(new iam.PolicyStatement({
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       resources: ['*'],
@@ -192,71 +205,72 @@ export class ScotusticianTransformersStack extends Stack {
       alarmDescription: 'Alarm if any ERROR-level logs are detected in the transformers container.',
     });
 
-    if (props.ingestTaskDefinitionArn) {
-      const eventRole = new iam.Role(this, 'TransformersEventRole', {
-        assumedBy: new iam.ServicePrincipal('events.amazonaws.com'),
-        inlinePolicies: {
-          EcsRunTask: new iam.PolicyDocument({
-            statements: [
-              new iam.PolicyStatement({
-                actions: ['ecs:RunTask'],
-                resources: [taskDefinition.taskDefinitionArn],
-              }),
-              new iam.PolicyStatement({
-                actions: ['iam:PassRole'],
-                resources: [
-                  taskDefinition.taskRole.roleArn,
-                  taskDefinition.executionRole!.roleArn,
-                ],
-              }),
-            ],
-          }),
-        },
-      });
+    // Auto-scheduling disabled for security - tasks must be run manually by root user
+    // if (props.ingestTaskDefinitionArn) {
+    //   const eventRole = new iam.Role(this, 'TransformersEventRole', {
+    //     assumedBy: new iam.ServicePrincipal('events.amazonaws.com'),
+    //     inlinePolicies: {
+    //       EcsRunTask: new iam.PolicyDocument({
+    //         statements: [
+    //           new iam.PolicyStatement({
+    //             actions: ['ecs:RunTask'],
+    //             resources: [taskDefinition.taskDefinitionArn],
+    //           }),
+    //           new iam.PolicyStatement({
+    //             actions: ['iam:PassRole'],
+    //             resources: [
+    //               taskDefinition.taskRole.roleArn,
+    //               taskDefinition.executionRole!.roleArn,
+    //             ],
+    //           }),
+    //         ],
+    //       }),
+    //     },
+    //   });
 
-      const ingestCompletionRule = new events.Rule(this, 'IngestCompletionRule', {
-        eventPattern: {
-          source: ['aws.ecs'],
-          detailType: ['ECS Task State Change'],
-          detail: {
-            lastStatus: ['STOPPED'],
-            stopCode: ['TaskCompletedNormally'],
-            taskDefinitionArn: [props.ingestTaskDefinitionArn],
-          },
-        },
-        description: 'Trigger transformers when ingest task completes successfully',
-      });
+    //   const ingestCompletionRule = new events.Rule(this, 'IngestCompletionRule', {
+    //     eventPattern: {
+    //       source: ['aws.ecs'],
+    //       detailType: ['ECS Task State Change'],
+    //       detail: {
+    //         lastStatus: ['STOPPED'],
+    //         stopCode: ['TaskCompletedNormally'],
+    //         taskDefinitionArn: [props.ingestTaskDefinitionArn],
+    //       },
+    //     },
+    //     description: 'Trigger transformers when ingest task completes successfully',
+    //   });
 
-      const subnetSelection = useGpu 
-        ? { subnetType: ec2.SubnetType.PUBLIC }
-        : { subnetType: ec2.SubnetType.PUBLIC };
+    //   const subnetSelection = useGpu 
+    //     ? { subnetType: ec2.SubnetType.PUBLIC }
+    //     : { subnetType: ec2.SubnetType.PUBLIC };
 
-      // assignPublicIp is only supported for FARGATE tasks, not EC2
-      const taskTarget: targets.EcsTaskProps = useGpu 
-        ? {
-            // GPU tasks use EC2, explicitly disable assignPublicIp
-            cluster: props.cluster,
-            taskDefinition,
-            role: eventRole,
-            subnetSelection,
-            launchType: ecs.LaunchType.EC2,
-            assignPublicIp: false,
-          }
-        : {
-            // Non-GPU tasks use Fargate, can use assignPublicIp
-            cluster: props.cluster,
-            taskDefinition,
-            role: eventRole,
-            subnetSelection,
-            launchType: ecs.LaunchType.FARGATE,
-            assignPublicIp: true,
-          };
+    //   // assignPublicIp is only supported for FARGATE tasks, not EC2
+    //   const taskTarget: targets.EcsTaskProps = useGpu 
+    //     ? {
+    //         // GPU tasks use EC2, explicitly disable assignPublicIp
+    //         cluster: props.cluster,
+    //         taskDefinition,
+    //         role: eventRole,
+    //         subnetSelection,
+    //         launchType: ecs.LaunchType.EC2,
+    //         assignPublicIp: false,
+    //       }
+    //     : {
+    //         // Non-GPU tasks use Fargate, can use assignPublicIp
+    //         cluster: props.cluster,
+    //         taskDefinition,
+    //         role: eventRole,
+    //         subnetSelection,
+    //         launchType: ecs.LaunchType.FARGATE,
+    //         assignPublicIp: true,
+    //       };
 
-      ingestCompletionRule.addTarget(new targets.EcsTask(taskTarget));
+    //   ingestCompletionRule.addTarget(new targets.EcsTask(taskTarget));
 
-      new CfnOutput(this, 'TransformersCompletionRuleArn', {
-        value: ingestCompletionRule.ruleArn,
-      });
-    }
+    //   new CfnOutput(this, 'TransformersCompletionRuleArn', {
+    //     value: ingestCompletionRule.ruleArn,
+    //   });
+    // }
   }
 }

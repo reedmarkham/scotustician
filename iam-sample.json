@@ -209,6 +209,20 @@
       }
     },
     {
+      "Sid": "RestrictECSToRootUser",
+      "Effect": "Deny",
+      "Action": [
+        "ecs:RunTask",
+        "ecs:StartTask"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:userid": "${AWS_ACCOUNT_ID}:root"
+        }
+      }
+    },
+    {
       "Sid": "DenyDangerousActions",
       "Effect": "Deny",
       "Action": [

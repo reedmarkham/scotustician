@@ -50,6 +50,19 @@ export class ScotusticianIngestStack extends Stack {
 
     bucket.grantReadWrite(taskDefinition.taskRole);
 
+    // Restrict ECS task execution to root user only
+    const accountId = this.account;
+    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['ecs:RunTask', 'ecs:StartTask'],
+      resources: ['*'],
+      conditions: {
+        StringNotEquals: {
+          'aws:userid': `${accountId}:root`
+        }
+      }
+    }));
+
     const currentYear = new Date().getFullYear();
     
     const container = taskDefinition.addContainer('IngestContainer', {
@@ -119,27 +132,28 @@ export class ScotusticianIngestStack extends Stack {
       },
     });
 
-    const scheduleRule = new events.Rule(this, 'IngestScheduleRule', {
-      schedule: events.Schedule.cron({
-        minute: '00',
-        hour: '14',
-        weekDay: 'MON,THU',
-      }),
-      description: 'Schedule ingest task to run at 10 AM ET (14:00 UTC) on Mondays and Thursdays',
-    });
+    // Auto-scheduling disabled for security - tasks must be run manually by root user
+    // const scheduleRule = new events.Rule(this, 'IngestScheduleRule', {
+    //   schedule: events.Schedule.cron({
+    //     minute: '00',
+    //     hour: '14',
+    //     weekDay: 'MON,THU',
+    //   }),
+    //   description: 'Schedule ingest task to run at 10 AM ET (14:00 UTC) on Mondays and Thursdays',
+    // });
 
-    scheduleRule.addTarget(new targets.EcsTask({
-      cluster: props.cluster,
-      taskDefinition,
-      role: eventRole,
-      subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
-      launchType: ecs.LaunchType.FARGATE,
-      assignPublicIp: true,
-    }));
+    // scheduleRule.addTarget(new targets.EcsTask({
+    //   cluster: props.cluster,
+    //   taskDefinition,
+    //   role: eventRole,
+    //   subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
+    //   launchType: ecs.LaunchType.FARGATE,
+    //   assignPublicIp: true,
+    // }));
 
-    new CfnOutput(this, 'IngestScheduleRuleArn', {
-      value: scheduleRule.ruleArn,
-    });
+    // new CfnOutput(this, 'IngestScheduleRuleArn', {
+    //   value: scheduleRule.ruleArn,
+    // });
 
     this.taskDefinitionArn = taskDefinition.taskDefinitionArn;
 
