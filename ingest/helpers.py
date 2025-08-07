@@ -4,11 +4,21 @@ import logging
 from typing import Any, Optional
 import time
 import uuid
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
 import boto3
+
+from shared.signal_utils import (
+    signal_handler,
+    setup_signal_handlers,
+    shutdown_requested,
+    active_futures,
+    executor_lock
+)
 
 logger = logging.getLogger(__name__)
 

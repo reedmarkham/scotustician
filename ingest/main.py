@@ -1,11 +1,6 @@
-import os
-import signal
-import sys
-import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os, sys, logging, time
 from datetime import datetime
-import time
-import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from helpers import (
     get_existing_oa_ids,
@@ -15,7 +10,12 @@ from helpers import (
     write_summary_to_s3,
     log_junk_to_s3,
     print_sample_data_validation,
-    BUCKET
+    BUCKET,
+    signal_handler,
+    setup_signal_handlers,
+    shutdown_requested,
+    active_futures,
+    executor_lock
 )
 
 from tqdm import tqdm
@@ -27,22 +27,6 @@ MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
 
-# Global shutdown flag
-shutdown_requested = threading.Event()
-active_futures = set()
-executor_lock = threading.Lock()
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully"""
-    signal_name = signal.Signals(signum).name
-    logger.info(f"Received {signal_name} signal. Initiating graceful shutdown...")
-    shutdown_requested.set()
-
-def setup_signal_handlers():
-    """Setup signal handlers for graceful shutdown"""
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    logger.info("Signal handlers configured for graceful shutdown")
 
 def main() -> None:
     # Setup signal handlers first

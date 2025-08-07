@@ -1,6 +1,9 @@
-import logging, io, json, os, time, threading, signal
+import logging, io, json, os, time, sys
 from typing import List, Dict
 import xml.etree.ElementTree as ET
+
+# Add parent directory to path for shared imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -8,6 +11,14 @@ import psycopg2, boto3, botocore.exceptions
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
+
+from shared.signal_utils import (
+    signal_handler,
+    setup_signal_handlers,
+    shutdown_requested,
+    active_futures,
+    executor_lock
+)
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -17,11 +28,6 @@ logging.basicConfig(level=logging.INFO)
 s3 = boto3.client("s3")
 MODEL_NAME = os.environ.get('MODEL_NAME', 'baai/bge-m3')
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-
-# Global shutdown flag for graceful shutdown handling
-shutdown_requested = threading.Event()
-active_futures = set()
-executor_lock = threading.Lock()
 
 def save_processing_checkpoint(processed_keys: set, checkpoint_file: str = "/tmp/scotustician_checkpoint.json"):
     """Save processing checkpoint to allow resumption after interruption"""
@@ -452,15 +458,6 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
         "oa_id": oa_id,
     }
 
-def signal_handler(signum, frame):
-    signal_name = signal.Signals(signum).name
-    logger.info(f"Received {signal_name} signal. Initiating graceful shutdown...")
-    shutdown_requested.set()
-
-def setup_signal_handlers():
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    logger.info("Signal handlers configured for graceful shutdown")
 
 def get_db_connection():
     POSTGRES_HOST = os.getenv("POSTGRES_HOST")
