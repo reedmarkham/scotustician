@@ -38,6 +38,7 @@ export class ScotusticianIngestStack extends Stack {
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
       directory: '../ingest',
+      file: 'Dockerfile.dlt',
       buildArgs: {
         BUILD_TIMESTAMP: Date.now().toString()
       },
@@ -72,10 +73,11 @@ export class ScotusticianIngestStack extends Stack {
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
-        RAW_PREFIX: 'raw/',
         START_TERM: '1980',
         END_TERM: currentYear.toString(),
-        MAX_WORKERS: '2', // Reduced from 8 to align with lower resources
+        DLT_PROJECT_DIR: '/code',
+        DLT_PIPELINE_DIR: '/code/.dlt',
+        AWS_DEFAULT_REGION: 'us-east-1',
       },
     });
 

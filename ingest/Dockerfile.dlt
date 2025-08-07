@@ -1,0 +1,24 @@
+FROM python:3.9-slim
+
+WORKDIR /code
+
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY main_dlt_incremental.py ./main.py
+COPY junk_handler.py .
+COPY .dlt/ ./.dlt/
+
+# Set environment variables for dlt
+ENV DLT_PROJECT_DIR=/code
+ENV DLT_PIPELINE_DIR=/code/.dlt
+
+# Create directory for dlt state persistence
+RUN mkdir -p /code/.dlt/pipelines
+
+CMD ["python", "main.py"]
