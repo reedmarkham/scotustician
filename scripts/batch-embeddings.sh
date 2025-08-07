@@ -109,9 +109,7 @@ JOB_ID=$(aws batch submit-job \
     S3_BUCKET="$S3_BUCKET",\
     RAW_PREFIX="$RAW_PREFIX",\
     PROCESSING_QUEUE_URL="$PROCESSING_QUEUE_URL",\
-    CHECKPOINT_QUEUE_URL="$CHECKPOINT_QUEUE_URL",\
-    BATCH_MODE="true",\
-    CHECKPOINT_FREQUENCY="5" \
+    CHECKPOINT_QUEUE_URL="$CHECKPOINT_QUEUE_URL" \
   --region "$AWS_REGION" \
   --query "jobId" \
   --output text)

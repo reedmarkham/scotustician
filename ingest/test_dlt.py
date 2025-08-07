@@ -14,7 +14,7 @@ os.environ["S3_BUCKET"] = "test-bucket"
 
 try:
     import dlt
-    from main_dlt_incremental import oyez_scotus_source
+    from main import oyez_scotus_source
     print("✓ Successfully imported dlt and pipeline modules")
 except ImportError as e:
     print(f"✗ Import failed: {e}")
