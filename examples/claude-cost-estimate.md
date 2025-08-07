@@ -62,6 +62,60 @@ This document provides detailed cost estimates for running the Scotustician SCOT
 - ECR container images: ~$0.20/month
 - **Total storage:** ~$0.22/month per 1,000 cases
 
+## 🏗️ Infrastructure Costs (Monthly)
+
+### Core Infrastructure Components
+
+The Scotustician pipeline relies on several AWS infrastructure components that incur monthly costs regardless of processing volume:
+
+**Networking & VPC:**
+- **VPC with 2 AZs:** Free
+- **Public/Private Subnets:** Free
+- **Internet Gateway:** Free
+- **VPC Endpoints:** $7.20/month per endpoint × 5 endpoints = **$36.00/month**
+  - S3 Gateway Endpoint: Free
+  - ECR Interface Endpoint: $7.20/month
+  - ECR Docker Interface Endpoint: $7.20/month
+  - CloudWatch Logs Interface Endpoint: $7.20/month
+  - Secrets Manager Interface Endpoint: $7.20/month
+
+**Database (PostgreSQL with pgvector):**
+- **RDS PostgreSQL instance:** Deployed separately via [scotustician-db](https://github.com/reedmarkham/scotustician-db)
+- Estimated cost for db.t3.micro: **$12.00/month**
+- Storage (20GB): **$2.30/month**
+- **Database total:** **~$14.30/month**
+
+**Container Orchestration:**
+- **ECS Clusters:** Free (no running tasks)
+- **Fargate tasks:** Pay-per-use (covered in compute costs)
+- **AWS Batch:** Free (compute environment only charged when running)
+
+**Monitoring & Logging:**
+- **CloudWatch Log Groups:** $0.50/GB ingested + $0.03/GB stored
+- **CloudWatch Alarms:** $0.10/alarm/month × 2 alarms = **$0.20/month**
+- **Log retention:** 1 week retention minimizes storage costs
+- **Estimated logging:** **$1.00-3.00/month** (varies by processing volume)
+
+**Security & Secrets:**
+- **AWS Secrets Manager:** $0.40/secret/month × 1 secret = **$0.40/month**
+- **Security Groups & IAM:** Free
+
+**Message Queues:**
+- **SQS Queues:** 2 queues (processing + checkpoints)
+- **Free tier:** 1M requests/month
+- **Estimated cost:** **$0.00-0.10/month** (within free tier for typical usage)
+
+### Infrastructure Cost Summary
+
+| Component | Monthly Cost |
+|-----------|-------------|
+| **VPC Endpoints** | $36.00 |
+| **Database (RDS)** | $14.30 |
+| **CloudWatch & Logging** | $1.50 |
+| **Secrets Manager** | $0.40 |
+| **SQS Queues** | $0.05 |
+| **Total Infrastructure** | **$52.25/month** |
+
 ## 🎯 Real-World Cost Examples
 
 ### Scenario 1: Research Project (500 cases)
@@ -70,7 +124,8 @@ Initial Setup:
 • Ingest: 500 cases × $0.0007 = $0.35
 • Transform: 500 cases (GPU) = $0.15
 • Storage: $0.11/month
-• Total first month: $0.61
+• Infrastructure: $52.25/month
+• Total first month: $52.86
 ```
 
 ### Scenario 2: Full Available Dataset (3,600 cases, 1980-2024)
@@ -78,8 +133,9 @@ Initial Setup:
 Initial Setup:
 • Ingest: 3,600 cases = $2.16
 • Transform: 3,600 cases (GPU) = $1.07
-• Storage: $0.80/month  
-• Total first month: $4.03
+• Storage: $0.80/month
+• Infrastructure: $52.25/month
+• Total first month: $56.28
 ```
 
 ### Scenario 3: Production with Updates
@@ -88,13 +144,15 @@ Monthly Operations:
 • Scheduled ingest: $0.11/month
 • New case processing: ~$0.05/month
 • Storage: $0.44/month (2k cases)
-• Total ongoing: $0.60/month
+• Infrastructure: $52.25/month
+• Total ongoing: $52.85/month
 ```
 
 ## 📊 Key Insights
 
 ### Cost Optimization Recommendations
 
+**For Processing Costs:**
 1. **Use GPU for medium-large jobs** (>500 cases)
    - 4x faster processing
    - 57% cost savings despite higher hourly rate
@@ -109,7 +167,26 @@ Monthly Operations:
 
 4. **Incremental Updates**
    - Scheduled jobs only process new cases
-   - Extremely low ongoing costs
+   - Extremely low ongoing processing costs
+
+**For Infrastructure Costs:**
+1. **Consider VPC Endpoint Trade-offs**
+   - Remove VPC endpoints: Save $36/month, add NAT Gateway costs (~$45/month)
+   - Net effect: Slightly higher cost but simplified architecture
+
+2. **Database Right-sizing**
+   - Start with db.t3.nano ($6/month) for development
+   - Scale to db.t3.micro ($12/month) for production
+   - Monitor and adjust based on actual usage
+
+3. **Shared Infrastructure**
+   - Deploy [scotustician-db](https://github.com/reedmarkham/scotustician-db) once
+   - Share across multiple projects/researchers
+   - Amortize infrastructure costs
+
+4. **Usage-based Deployment**
+   - Consider serverless alternatives for infrequent use
+   - Deploy infrastructure only when needed for large processing jobs
 
 ### Cost Comparison with Alternatives
 
@@ -126,13 +203,15 @@ Monthly Operations:
 
 ## 🚀 Scalability Analysis
 
-The pipeline scales cost-effectively:
+The pipeline scales cost-effectively, with infrastructure representing the primary ongoing cost:
 
-| Dataset Size | One-time Setup | Monthly Ongoing |
-|--------------|----------------|-----------------|
-| **Small** (100 cases) | $0.15 | $0.13 |
-| **Medium** (1,000 cases) | $1.00 | $0.33 |
-| **Large** (3,600 cases, full available) | $4.03 | $0.91 |
+| Dataset Size | One-time Setup (Compute + Storage) | Monthly Ongoing (Total) |
+|--------------|-------------------------------------|-------------------------|
+| **Small** (100 cases) | $0.15 | $52.38 |
+| **Medium** (1,000 cases) | $1.00 | $52.58 |
+| **Large** (3,600 cases, full available) | $4.03 | $53.16 |
+
+**Key Insight:** Infrastructure costs ($52.25/month) dominate total expenses, making processing costs relatively insignificant for ongoing operations.
 
 ## 💡 Cost Control Features
 
@@ -141,25 +220,46 @@ The pipeline scales cost-effectively:
 - Container resource limits prevent runaway costs
 - Fargate eliminates idle server costs
 - S3 lifecycle policies for long-term storage
+- 1-week log retention minimizes CloudWatch costs
+- VPC endpoints reduce NAT Gateway costs
 
 **Monitoring:**
-- CloudWatch cost alerts
-- ECS task execution logs
+- CloudWatch cost alerts and alarms ($0.20/month)
+- ECS task execution logs with automatic cleanup
 - Automatic scaling based on demand
+
+**Infrastructure Optimization Options:**
+- **VPC Endpoints:** Can be removed to save $36/month, but increases NAT Gateway costs (~$45/month)
+- **Database sizing:** Can downgrade to db.t3.nano ($6/month) for light workloads
+- **Log retention:** Reduce to 3 days to minimize CloudWatch costs
 
 ---
 
 ## Summary
 
-The Scotustician pipeline is **cost-effective**:
+The Scotustician pipeline has **two cost components**:
+
+### Compute Costs (One-time & Variable)
 - **Initial setup:** $0.15 - $4.03 depending on dataset size
-- **Ongoing operations:** $0.13 - $0.91/month
-- **Cost per case:** ~$0.0006 - $0.0010
+- **Processing cost per case:** ~$0.0006 - $0.0010
+- **Storage costs:** Negligible (~$0.22/month per 1,000 cases)
+
+### Infrastructure Costs (Fixed Monthly)
+- **Core infrastructure:** $52.25/month
+- **Includes:** VPC endpoints, RDS database, monitoring, secrets management
+- **Unavoidable for production deployment**
+
+### Total Cost Reality
+- **First month (any size):** $52.40 - $56.28
+- **Ongoing monthly:** $52.25 - $53.16
+- **Infrastructure dominates costs:** ~98% of monthly expenses
 
 **Key considerations:**
+- Infrastructure costs are fixed regardless of usage volume
+- Processing costs become insignificant compared to infrastructure
+- Best suited for continuous operation or high-volume processing
+- Consider shared infrastructure or serverless alternatives for light usage
 - API rate limiting makes ingest jobs run 3-4x longer than pure compute time
-- Full available dataset (1980-2024) contains ~3,600 cases, not 2,000+
-- Storage costs remain negligible compared to compute
-- GPU-enabled transformers provide significant time and cost savings
+- GPU-enabled transformers provide significant time and cost savings for processing
 
-*For most academic and research use cases, expect total costs under $5.00 for initial setup and under $1.00/month ongoing.*
+*The pipeline is cost-effective for production workloads but may be expensive for occasional research use due to fixed infrastructure costs. Consider the [scotustician-db](https://github.com/reedmarkham/scotustician-db) shared infrastructure model for multiple projects.*
