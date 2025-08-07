@@ -1,20 +1,15 @@
-import os, logging, time, sys, json
-from typing import List, Dict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
-import psycopg2
+import os, logging
+from typing import Dict, Any
 
 from helpers import (
-    process_transcript_with_chunking,
-    insert_document_chunk_embeddings,
-    ensure_tables_exist,
     extract_metadata_from_key,
     get_db_connection,
-    list_s3_keys,
-    send_checkpoint,
-    get_job_file_range,
-    send_processing_message
+    ensure_tables_exist,
+    process_transcript_with_chunking,
+    insert_document_chunk_embeddings
 )
+
+import ray, ray.data, psycopg2
 
 logger = logging.getLogger(__name__)
 
@@ -43,135 +38,189 @@ def process_single_document(bucket: str, input_key: str, model_name: str, model_
     finally:
         conn.close()
 
-def process_key(key: str):
-    """Process a single key for embedding generation"""
+def process_transcript_batch(batch: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process a batch of transcripts for Ray Data.
+    This function will be called by Ray's map_batches.
+    """
+    # Environment configuration
     BUCKET = os.getenv("S3_BUCKET", "scotustician")
     MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
     MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", 24))
     
+    results = []
+    
+    # Process each item in the batch
+    for idx in range(len(batch['path'])):
+        key = batch['path'][idx]
+        
+        try:
+            meta = extract_metadata_from_key(key)
+            
+            with get_db_connection() as conn:
+                chunks = process_transcript_with_chunking(
+                    BUCKET, key, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, conn, meta
+                )
+                insert_document_chunk_embeddings(chunks, conn)
+            
+            results.append({
+                'key': key,
+                'status': 'success',
+                'chunks_created': len(chunks),
+                'error': None
+            })
+            logger.info(f"Processed: {key} ({len(chunks)} section chunks created)")
+            
+        except Exception as e:
+            results.append({
+                'key': key,
+                'status': 'failed',
+                'chunks_created': 0,
+                'error': str(e)
+            })
+            logger.error(f"Failed: {key} | {e}")
+    
+    return {'results': results}
+
+def get_unprocessed_keys_filter():
+    """
+    Get a filter function for incremental processing.
+    Returns a function that filters out already processed keys.
+    """
+    if os.getenv("INCREMENTAL", "true").lower() != "true":
+        return None
+    
     try:
-        meta = extract_metadata_from_key(key)
-        
         with get_db_connection() as conn:
-            chunks = process_transcript_with_chunking(
-                BUCKET, key, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, conn, meta
-            )
-            insert_document_chunk_embeddings(chunks, conn)
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT source_key 
+                    FROM scotustician.document_chunk_embeddings 
+                    WHERE source_key IS NOT NULL
+                """)
+                processed_keys = {row[0] for row in cursor.fetchall()}
+                logger.info(f"Found {len(processed_keys)} already processed files in database")
+                
+        def filter_unprocessed(batch: Dict[str, Any]) -> Dict[str, Any]:
+            """Filter out already processed keys from batch"""
+            mask = [path not in processed_keys for path in batch['path']]
+            return {
+                'path': [p for p, m in zip(batch['path'], mask) if m]
+            }
         
-        return f"Processed: {key} ({len(chunks)} section chunks created)"
+        return filter_unprocessed
+        
     except Exception as e:
-        return f"Failed: {key} | {e}"
+        logger.warning(f"Could not fetch processed keys from database: {e}")
+        return None
 
 def batch_process_files():
-    """Main batch processing function optimized for AWS Batch with checkpointing"""
+    """
+    Main batch processing function using Ray Data.
+    Simplified version that leverages Ray's built-in parallelization,
+    fault tolerance, and memory management.
+    """
     
     # Environment configuration
     BUCKET = os.getenv("S3_BUCKET", "scotustician")
     PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
-    MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
-    MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
-    BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", 1))
-    INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
-    CHECKPOINT_FREQUENCY = int(os.getenv("CHECKPOINT_FREQUENCY", 5))
-    
-    # SQS Configuration
-    PROCESSING_QUEUE_URL = os.getenv("PROCESSING_QUEUE_URL")
-    CHECKPOINT_QUEUE_URL = os.getenv("CHECKPOINT_QUEUE_URL")
+    FILES_PER_JOB = int(os.getenv("FILES_PER_JOB", "10"))
     
     # AWS Batch job parameters
     JOB_START_INDEX = int(os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0"))
-    FILES_PER_JOB = int(os.getenv("FILES_PER_JOB", "10"))
     
-    job_id = os.getenv("AWS_BATCH_JOB_ID", f"local-{int(time.time())}")
+    job_id = os.getenv("AWS_BATCH_JOB_ID", f"local-{os.getpid()}")
     logger.info(f"Starting batch job {job_id} (array index: {JOB_START_INDEX})")
-    logger.info(f"Configuration: Model={MODEL_NAME}, Batch={BATCH_SIZE}, Workers={MAX_WORKERS}")
-    logger.info(f"Checkpoint frequency: every {CHECKPOINT_FREQUENCY} files")
+    logger.info(f"Configuration: Workers={MAX_WORKERS}, Files per batch={FILES_PER_JOB}")
     
-    # Get all files to process
-    all_keys = list_s3_keys(BUCKET, PREFIX)
-    
-    if not all_keys:
-        logger.info("No files found to process")
-        return
-    
-    # Get this job's subset of files
-    job_keys = get_job_file_range(all_keys, JOB_START_INDEX, FILES_PER_JOB)
-    
-    if not job_keys:
-        logger.info(f"No files assigned to job array index {JOB_START_INDEX}")
-        return
+    # Initialize Ray (if not already initialized)
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=True)
     
     # Initialize database tables
     with get_db_connection() as conn:
         ensure_tables_exist(conn)
     
-    processed_files = []
-    failed_files = []
-    checkpoint_counter = 0
-    
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {}
+    try:
+        # Read JSON files from S3
+        ds = ray.data.read_json(
+            f"s3://{BUCKET}/{PREFIX}",
+            parallelism=MAX_WORKERS,
+            meta_provider=ray.data.datasource.FastFileMetadataProvider()
+        )
         
-        for key in job_keys:
-            send_processing_message(key, 'started', PROCESSING_QUEUE_URL, JOB_START_INDEX)
-            future = executor.submit(process_key, key)
-            futures[future] = key
+        # Get total count for job array splitting
+        total_files = ds.count()
+        logger.info(f"Found {total_files} total files to process")
+        
+        # Calculate this job's file range
+        start_idx = JOB_START_INDEX * FILES_PER_JOB
+        end_idx = min(start_idx + FILES_PER_JOB, total_files)
+        
+        if start_idx >= total_files:
+            logger.info(f"No files assigned to job array index {JOB_START_INDEX}")
+            return
+        
+        # Take only this job's subset of files
+        ds = ds.skip(start_idx).limit(FILES_PER_JOB)
+        
+        # Apply incremental filter if enabled
+        filter_fn = get_unprocessed_keys_filter()
+        if filter_fn:
+            ds = ds.map_batches(filter_fn, batch_format="pandas")
+            remaining = ds.count()
+            logger.info(f"After filtering processed files: {remaining} files to process")
             
-        logger.info(f"Submitted {len(futures)} tasks for processing")
+            if remaining == 0:
+                logger.info("All files already processed")
+                return
         
-        with tqdm(total=len(futures), desc=f"Job {JOB_START_INDEX}") as pbar:
-            for future in as_completed(futures.keys()):
-                key = futures[future]
-                
-                try:
-                    result = future.result()
-                    logger.info(result)
-                    
-                    if result.startswith("Processed"):
-                        processed_files.append(key)
-                        send_processing_message(key, 'completed', PROCESSING_QUEUE_URL, JOB_START_INDEX)
-                        checkpoint_counter += 1
-                        
-                        # Save checkpoint every N files
-                        if checkpoint_counter >= CHECKPOINT_FREQUENCY:
-                            send_checkpoint(processed_files[-checkpoint_counter:], job_id, CHECKPOINT_QUEUE_URL, JOB_START_INDEX)
-                            checkpoint_counter = 0
-                            
-                    elif result.startswith("Failed"):
-                        failed_files.append(key)
-                        send_processing_message(key, 'failed', PROCESSING_QUEUE_URL, JOB_START_INDEX, error=result)
-                    else:
-                        logger.info(f"File {key} was skipped: {result}")
-                    
-                except Exception as e:
-                    logger.error(f"Exception processing {key}: {e}")
-                    failed_files.append(key)
-                    send_processing_message(key, 'failed', PROCESSING_QUEUE_URL, JOB_START_INDEX, error=str(e))
-                
-                pbar.update(1)
-    
-    # Final checkpoint with any remaining processed files
-    if checkpoint_counter > 0 and processed_files:
-        send_checkpoint(processed_files[-checkpoint_counter:], job_id, CHECKPOINT_QUEUE_URL, JOB_START_INDEX)
-    
-    # Final summary
-    total_assigned = len(job_keys)
-    total_processed = len(processed_files)
-    total_failed = len(failed_files)
-    interrupted = total_assigned - total_processed - total_failed
-    
-    logger.info("Batch job complete.")
-    logger.info(f"Summary for job {job_id} (index {JOB_START_INDEX}):")
-    logger.info(f"  - Files assigned: {total_assigned}")
-    logger.info(f"  - Successfully processed: {total_processed}")
-    logger.info(f"  - Failed: {total_failed}")
-    logger.info(f"  - Interrupted: {interrupted}")
-    
-    if total_failed > 0:
-        logger.warning(f"Job completed with {total_failed} failures")
-        sys.exit(1)    # Some files failed
-    else:
-        logger.info("All assigned files processed successfully")
-        sys.exit(0)    # Success
+        # Process transcripts in batches
+        results_ds = ds.map_batches(
+            process_transcript_batch,
+            batch_size=min(FILES_PER_JOB, 10),  # Process in smaller batches for better parallelism
+            num_cpus=MAX_WORKERS,
+            batch_format="pandas"
+        )
+        
+        # Collect results
+        results = results_ds.take_all()
+        
+        # Aggregate statistics
+        all_results = []
+        for batch_result in results:
+            if 'results' in batch_result:
+                all_results.extend(batch_result['results'])
+        
+        total_processed = sum(1 for r in all_results if r['status'] == 'success')
+        total_failed = sum(1 for r in all_results if r['status'] == 'failed')
+        
+        # Log summary
+        logger.info("Batch job complete.")
+        logger.info(f"Summary for job {job_id} (index {JOB_START_INDEX}):")
+        logger.info(f"  - Files assigned: {end_idx - start_idx}")
+        logger.info(f"  - Successfully processed: {total_processed}")
+        logger.info(f"  - Failed: {total_failed}")
+        
+        # Log failures
+        for result in all_results:
+            if result['status'] == 'failed':
+                logger.error(f"Failed file: {result['key']} - {result['error']}")
+        
+        # Exit with appropriate code
+        if total_failed > 0:
+            logger.warning(f"Job completed with {total_failed} failures")
+            exit(1)
+        else:
+            logger.info("All assigned files processed successfully")
+            exit(0)
+            
+    except Exception as e:
+        logger.error(f"Fatal error in batch processing: {e}")
+        exit(1)
+    finally:
+        # Shutdown Ray to free resources
+        if ray.is_initialized():
+            ray.shutdown()

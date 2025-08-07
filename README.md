@@ -8,7 +8,7 @@ The embeddings from this pipeline support downstream tasks such as semantic sear
 
 Data Pipeline:
 1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses the `baai/bge-m3` model within Hugging Face Transformers to generate embeddings. 
+2. Processed text from `ingest` on S3 is read by `transformers`, which uses Ray Data for distributed processing and the `baai/bge-m3` model within Hugging Face Transformers to generate embeddings. Ray provides pipeline abstractions for batching, parallelization, and fault tolerance.
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which has been deployed separately.
 
