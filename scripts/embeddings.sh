@@ -1,26 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
-# Environment Variables with Defaults
-REGION="${AWS_REGION:-us-east-1}"
-S3_BUCKET="${S3_BUCKET:-scotustician}"
-RAW_PREFIX="${RAW_PREFIX:-raw/oa}"
-MODEL_NAME="${MODEL_NAME:-baai/bge-m3}"
-MODEL_DIMENSION="${MODEL_DIMENSION:-1024}"
-BATCH_SIZE="${BATCH_SIZE:-4}"
-MAX_WORKERS="${MAX_WORKERS:-2}"
-INCREMENTAL="${INCREMENTAL:-true}"
-
-# Display configuration
-echo "=== Embeddings Configuration ==="
-echo "Region: $REGION"
-echo "S3 Bucket: $S3_BUCKET"
-echo "Raw Prefix: $RAW_PREFIX"
-echo "Model: $MODEL_NAME (dim: $MODEL_DIMENSION)"
-echo "Batch Size: $BATCH_SIZE"
-echo "Max Workers: $MAX_WORKERS"
-echo "Incremental Mode: $INCREMENTAL"
+# Redirect to new AWS Batch implementation
+echo "NOTE: ECS-based embedding processing has been migrated to AWS Batch"
+echo "Redirecting to batch-embeddings.sh for improved spot instance resilience"
 echo "================================"
+
+# Pass through environment variables
+export AWS_REGION="${AWS_REGION:-us-east-1}"
+export S3_BUCKET="${S3_BUCKET:-scotustician}"
+export RAW_PREFIX="${RAW_PREFIX:-raw/oa}"
+export MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-Embedding-0.6B}"
+export MODEL_DIMENSION="${MODEL_DIMENSION:-1024}"
+export BATCH_SIZE="${BATCH_SIZE:-4}"
+export MAX_WORKERS="${MAX_WORKERS:-1}"
+export INCREMENTAL="${INCREMENTAL:-true}"
+export FILES_PER_JOB="${FILES_PER_JOB:-10}"
+
+# Get the directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Execute the new batch script
+exec "$SCRIPT_DIR/batch-embeddings.sh"
 
 # Dynamically retrieve values from CloudFormation
 echo "Retrieving CloudFormation outputs..."

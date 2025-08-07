@@ -1,9 +1,5 @@
-import logging, io, json, os, time, sys
+import logging, io, json, os, time, sys, xml.etree.ElementTree as ET
 from typing import List, Dict
-import xml.etree.ElementTree as ET
-
-# Add parent directory to path for shared imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -11,14 +7,6 @@ import psycopg2, boto3, botocore.exceptions
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
-
-from shared.signal_utils import (
-    signal_handler,
-    setup_signal_handlers,
-    shutdown_requested,
-    active_futures,
-    executor_lock
-)
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -87,18 +75,9 @@ def get_transcript_s3(bucket: str, key: str) -> str:
             for turn in section.get("turns", [])
         )
         
-        with tqdm(total=total_blocks, desc="Converting to XML", unit="blocks", 
-                 disable=shutdown_requested.is_set()) as pbar:
+        with tqdm(total=total_blocks, desc="Converting to XML", unit="blocks") as pbar:
             for section in sections:
-                if shutdown_requested.is_set():
-                    logger.info("Shutdown requested during XML conversion")
-                    raise InterruptedError("Processing interrupted during XML conversion")
-                
                 for turn in section.get("turns", []):
-                    if shutdown_requested.is_set():
-                        logger.info("Shutdown requested during turn processing")
-                        raise InterruptedError("Processing interrupted during turn processing")
-                        
                     speaker = turn.get("speaker", {}).get("name", "Unknown")
                     for block in turn.get("text_blocks", []):
                         text = block.get("text")
@@ -181,20 +160,12 @@ def process_transcript_with_chunking(
         logger.info(f"Processing {len(sections)} sections...")
         
         for section_id, section in enumerate(sections):
-            if shutdown_requested.is_set():
-                logger.info(f"Shutdown requested during section {section_id} processing")
-                raise InterruptedError(f"Processing interrupted at section {section_id}")
-                
             section_utterances = []
             section_texts = []
             start_utterance_idx = global_utterance_idx
             
             # Process all turns in this section
             for turn in section.get("turns", []):
-                if shutdown_requested.is_set():
-                    logger.info(f"Shutdown requested during turn processing in section {section_id}")
-                    raise InterruptedError(f"Processing interrupted during turn in section {section_id}")
-                    
                 speaker = turn.get("speaker", {}).get("name", "Unknown")
                 speaker_id = str(turn.get("speaker", {}).get("id", ""))
                 
@@ -258,15 +229,7 @@ def process_transcript_with_chunking(
 
         logger.info(f"Processed {len(all_utterances_data)} total utterances across {len(section_chunks)} sections.")
         
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested before database insert")
-            raise InterruptedError("Processing interrupted before database insert")
-            
         insert_oa_text_data(all_utterances_data, conn)
-        
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested before embedding generation")
-            raise InterruptedError("Processing interrupted before embedding generation")
         
         logger.info(f"Generating embeddings for {len(section_chunks)} section chunks...")
         model = SentenceTransformer(model_name)
@@ -274,21 +237,12 @@ def process_transcript_with_chunking(
         
         chunk_texts = [chunk['chunk_text'] for chunk in section_chunks]
         
-        # Check for interruption before the expensive embedding generation
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested during embedding model preparation")
-            raise InterruptedError("Processing interrupted during embedding model preparation")
-        
         embeddings = model.encode(
             chunk_texts, 
             batch_size=batch_size, 
-            show_progress_bar=not shutdown_requested.is_set(), 
+            show_progress_bar=True, 
             convert_to_tensor=False
         )
-        
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested after embedding generation")
-            raise InterruptedError("Processing interrupted after embedding generation")
         
         # Add embeddings and metadata to chunks
         for chunk, emb in zip(section_chunks, embeddings):
@@ -497,9 +451,6 @@ def list_s3_keys(bucket: str, prefix: str):
     logger.info(f"Listing objects in s3://{bucket}/{prefix}...")
     keys = []
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested during S3 listing, stopping...")
-            break
         for obj in page.get("Contents", []):
             keys.append(obj["Key"])
     
@@ -514,10 +465,7 @@ def list_s3_keys(bucket: str, prefix: str):
     return keys
 
 def process_key(key: str):
-    """Process a single key with interruption checking"""
-    if shutdown_requested.is_set():
-        return f"Skipped: {key} (shutdown requested)"
-    
+    """Process a single key for embedding generation"""
     BUCKET = os.getenv("S3_BUCKET", "scotustician")
     MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
     MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
@@ -526,56 +474,16 @@ def process_key(key: str):
     try:
         meta = extract_metadata_from_key(key)
         
-        if shutdown_requested.is_set():
-            return f"Interrupted: {key} (shutdown during processing)"
-        
         with get_db_connection() as conn:
             chunks = process_transcript_with_chunking(
                 BUCKET, key, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, conn, meta
             )
-            
-            if shutdown_requested.is_set():
-                logger.warning(f"Shutdown requested during chunking for {key}")
-                return f"Interrupted: {key} (shutdown during chunking)"
-            
             insert_document_chunk_embeddings(chunks, conn)
-
-        if shutdown_requested.is_set():
-            return f"Interrupted: {key} (shutdown after processing)"
         
         return f"Processed: {key} ({len(chunks)} section chunks created)"
     except Exception as e:
-        if shutdown_requested.is_set():
-            return f"Interrupted: {key} | {e}"
         return f"Failed: {key} | {e}"
 
-def graceful_shutdown_executor(executor, timeout=30):
-    """Gracefully shutdown ThreadPoolExecutor with timeout"""
-    logger.info(f"Initiating graceful shutdown of executor (timeout: {timeout}s)...")
-    
-    # Cancel pending futures
-    cancelled_count = 0
-    with executor_lock:
-        for future in list(active_futures):
-            if future.cancel():
-                cancelled_count += 1
-    
-    logger.info(f"Cancelled {cancelled_count} pending tasks")
-    
-    executor.shutdown(wait=False)
-    
-    # Wait for running tasks to complete with timeout
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        with executor_lock:
-            running_futures = [f for f in active_futures if f.running()]
-        if not running_futures:
-            logger.info("All running tasks completed gracefully")
-            return True
-        time.sleep(0.5)
-    
-    logger.warning(f"Timeout reached, {len(running_futures)} tasks may still be running")
-    return False
 
 def ensure_tables_exist(conn):
     logger.info("Ensuring Postgres tables exist...")
@@ -590,4 +498,179 @@ def ensure_tables_exist(conn):
         conn.commit()
     
     logger.info("Tables exist.")
+
+
+# AWS Batch specific functions
+def send_checkpoint(processed_files: list, job_id: str, checkpoint_queue_url: str, job_array_index: int) -> None:
+    """Send checkpoint information to SQS for progress tracking"""
+    if not checkpoint_queue_url:
+        return
+    
+    try:
+        import boto3
+        sqs = boto3.client('sqs')
+        checkpoint_data = {
+            'job_id': job_id,
+            'processed_files': processed_files,
+            'timestamp': time.time(),
+            'job_array_index': job_array_index
+        }
+        
+        sqs.send_message(
+            QueueUrl=checkpoint_queue_url,
+            MessageBody=json.dumps(checkpoint_data)
+        )
+        logger.info(f"Checkpoint saved: {len(processed_files)} files processed")
+    except Exception as e:
+        logger.warning(f"Failed to send checkpoint: {e}")
+
+
+def get_job_file_range(all_keys: list, job_array_index: int, files_per_job: int) -> list:
+    """Get the subset of files this job should process based on array index"""
+    start_idx = job_array_index * files_per_job
+    end_idx = min(start_idx + files_per_job, len(all_keys))
+    
+    job_keys = all_keys[start_idx:end_idx]
+    logger.info(f"Job {job_array_index}: Processing files {start_idx}-{end_idx-1} ({len(job_keys)} files)")
+    return job_keys
+
+
+def send_processing_message(key: str, status: str, processing_queue_url: str, job_array_index: int, error: str = None) -> None:
+    """Send processing status to SQS queue"""
+    if not processing_queue_url:
+        return
+    
+    try:
+        import boto3
+        sqs = boto3.client('sqs')
+        message_data = {
+            'key': key,
+            'status': status,  # 'started', 'completed', 'failed'
+            'timestamp': time.time(),
+            'job_array_index': job_array_index,
+            'error': error
+        }
+        
+        sqs.send_message(
+            QueueUrl=processing_queue_url,
+            MessageBody=json.dumps(message_data)
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send processing message for {key}: {e}")
+
+
+def batch_process_files():
+    """Main batch processing function optimized for AWS Batch with checkpointing"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from tqdm import tqdm
+    
+    # Environment configuration
+    BUCKET = os.getenv("S3_BUCKET", "scotustician")
+    PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
+    MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
+    MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", 4))
+    MAX_WORKERS = int(os.getenv("MAX_WORKERS", 1))
+    INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
+    CHECKPOINT_FREQUENCY = int(os.getenv("CHECKPOINT_FREQUENCY", 5))
+    
+    # SQS Configuration
+    PROCESSING_QUEUE_URL = os.getenv("PROCESSING_QUEUE_URL")
+    CHECKPOINT_QUEUE_URL = os.getenv("CHECKPOINT_QUEUE_URL")
+    
+    # AWS Batch job parameters
+    JOB_START_INDEX = int(os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0"))
+    FILES_PER_JOB = int(os.getenv("FILES_PER_JOB", "10"))
+    
+    job_id = os.getenv("AWS_BATCH_JOB_ID", f"local-{int(time.time())}")
+    logger.info(f"Starting batch job {job_id} (array index: {JOB_START_INDEX})")
+    logger.info(f"Configuration: Model={MODEL_NAME}, Batch={BATCH_SIZE}, Workers={MAX_WORKERS}")
+    logger.info(f"Checkpoint frequency: every {CHECKPOINT_FREQUENCY} files")
+    
+    # Get all files to process
+    all_keys = list_s3_keys(BUCKET, PREFIX)
+    
+    if not all_keys:
+        logger.info("No files found to process")
+        return
+    
+    # Get this job's subset of files
+    job_keys = get_job_file_range(all_keys, JOB_START_INDEX, FILES_PER_JOB)
+    
+    if not job_keys:
+        logger.info(f"No files assigned to job array index {JOB_START_INDEX}")
+        return
+    
+    # Initialize database tables
+    with get_db_connection() as conn:
+        ensure_tables_exist(conn)
+    
+    processed_files = []
+    failed_files = []
+    checkpoint_counter = 0
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {}
+        
+        for key in job_keys:
+            send_processing_message(key, 'started', PROCESSING_QUEUE_URL, JOB_START_INDEX)
+            future = executor.submit(process_key, key)
+            futures[future] = key
+            
+        logger.info(f"Submitted {len(futures)} tasks for processing")
+        
+        with tqdm(total=len(futures), desc=f"Job {JOB_START_INDEX}") as pbar:
+            for future in as_completed(futures.keys()):
+                key = futures[future]
+                
+                try:
+                    result = future.result()
+                    logger.info(result)
+                    
+                    if result.startswith("Processed"):
+                        processed_files.append(key)
+                        send_processing_message(key, 'completed', PROCESSING_QUEUE_URL, JOB_START_INDEX)
+                        checkpoint_counter += 1
+                        
+                        # Save checkpoint every N files
+                        if checkpoint_counter >= CHECKPOINT_FREQUENCY:
+                            send_checkpoint(processed_files[-checkpoint_counter:], job_id, CHECKPOINT_QUEUE_URL, JOB_START_INDEX)
+                            checkpoint_counter = 0
+                            
+                    elif result.startswith("Failed"):
+                        failed_files.append(key)
+                        send_processing_message(key, 'failed', PROCESSING_QUEUE_URL, JOB_START_INDEX, error=result)
+                    else:
+                        logger.info(f"File {key} was skipped: {result}")
+                    
+                except Exception as e:
+                    logger.error(f"Exception processing {key}: {e}")
+                    failed_files.append(key)
+                    send_processing_message(key, 'failed', PROCESSING_QUEUE_URL, JOB_START_INDEX, error=str(e))
+                
+                pbar.update(1)
+    
+    # Final checkpoint with any remaining processed files
+    if checkpoint_counter > 0 and processed_files:
+        send_checkpoint(processed_files[-checkpoint_counter:], job_id, CHECKPOINT_QUEUE_URL, JOB_START_INDEX)
+    
+    # Final summary
+    total_assigned = len(job_keys)
+    total_processed = len(processed_files)
+    total_failed = len(failed_files)
+    interrupted = total_assigned - total_processed - total_failed
+    
+    logger.info("Batch job complete.")
+    logger.info(f"Summary for job {job_id} (index {JOB_START_INDEX}):")
+    logger.info(f"  - Files assigned: {total_assigned}")
+    logger.info(f"  - Successfully processed: {total_processed}")
+    logger.info(f"  - Failed: {total_failed}")
+    logger.info(f"  - Interrupted: {interrupted}")
+    
+    if total_failed > 0:
+        logger.warning(f"Job completed with {total_failed} failures")
+        sys.exit(1)    # Some files failed
+    else:
+        logger.info("All assigned files processed successfully")
+        sys.exit(0)    # Success
 
