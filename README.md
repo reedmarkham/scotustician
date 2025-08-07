@@ -7,9 +7,15 @@
 The embeddings from this pipeline support downstream tasks such as semantic search, clustering, and interactive visualization. I have chosen to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d text embeddings, due to its strong reputation for similar tasks such as semantic retrieval.
 
 Data Pipeline:
-1. `ingest` collects and loads SCOTUS metadata and case text from Oyez.org API to S3.
-2. Processed text from `ingest` on S3 is read by `transformers`, which uses Ray Data for distributed processing and the `baai/bge-m3` model within Hugging Face Transformers to generate embeddings. Ray provides pipeline abstractions for batching, parallelization, and fault tolerance.
-* Also serialized data (XML) for the transcript is written out to S3.
+1. `ingest` (ECS Fargate) uses DLT (data load tool) pipeline to collect SCOTUS metadata and case text from Oyez.org API:
+   - Declarative, configuration-driven data extraction with incremental loading
+   - Automatic rate limiting and error handling via DLT framework
+   - Stores raw JSON files and metadata in S3 with built-in state management
+2. `transformers` (AWS Batch + Ray Data) processes the ingested data using distributed GPU computing:
+   - AWS Batch manages array jobs on spot GPU instances (g4dn.xlarge) for cost efficiency
+   - Each job uses Ray Data for parallel file processing with automatic fault tolerance  
+   - The `baai/bge-m3` model generates 1024-dimensional embeddings using section-based chunking
+   - SQS queues track job progress and provide checkpoint management
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which has been deployed separately.
 
 ## Oral Argument Structure
@@ -142,10 +148,10 @@ The `scripts/` directory contains the following utilities:
 
 | File | Usage |
 |--------|---------|
-| `bootstrap.sh` | Gets account ID and region from AWS CLI to then run the CDK bootstrap command, allowing the qualifier to be used downstream for consistent deployments |
-| `chunking.sql` | SQL queries for downstream processing of utterance embeddings with various chunking strategies |
-| `embeddings.sh` | Runs the embedding generation task with incremental processing |
-| `ingest.sh` | Runs the data ingestion task to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
+| `bootstrap.sh` | Gets account ID and region from AWS CLI to run the CDK bootstrap command with the custom qualifier for consistent deployments |
+| `chunking.sql` | SQL queries for downstream processing of document chunk embeddings with various chunking strategies and semantic search examples |
+| `embeddings.sh` | Submits AWS Batch array jobs for distributed embedding generation using Ray Data with GPU spot instances |
+| `ingest.sh` | Runs ECS Fargate tasks to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
 
 
 ### Running Data Ingestion
@@ -157,11 +163,12 @@ To ingest oral argument data from the Oyez.org API to S3:
 ```
 
 This script will:
-- Dynamically retrieve the ECS cluster name and task definition from CloudFormation
-- Launch a Fargate task with incremental loading (skips existing files on S3)
+- Dynamically retrieve ECS cluster, task definition, and network configuration from CloudFormation stacks
+- Launch a Fargate task in public subnets with internet access to reach Oyez.org API  
+- Use incremental loading to skip files that already exist in S3
 - Store raw JSON files in S3 under `s3://scotustician/raw/oa/`
-- Display configuration and progress information
-- Print sample data for validation after completion
+- Display real-time configuration and launch progress
+- Automatically use default security groups for the VPC
 
 **Note**: The infrastructure stack also creates a scheduled ECS task that automatically runs the ingest process at 10 AM UTC on Mondays and Thursdays. This ensures regular data updates without manual intervention.
 
@@ -179,35 +186,48 @@ Environment variables with defaults:
 
 ### Running Embedding Generation
 
-To generate embeddings from ingested data:
+To generate embeddings from ingested data using AWS Batch:
 
 ```bash
 ./scripts/embeddings.sh
 ```
 
 This script will:
-- Automatically detect GPU or CPU task definitions
-- Use appropriate security groups for RDS access in private subnets
-- Read XML transcript data from S3 and generate both case-level and utterance-level embeddings
+- Submit AWS Batch array jobs for distributed processing using Ray Data
+- Automatically count files and determine the optimal job array size
+- Use GPU spot instances (g4dn.xlarge) for cost-effective embedding generation
 - Support incremental processing (skip existing embeddings by default)
+- Process files in parallel batches with fault tolerance
 - Store embeddings in PostgreSQL with pgvector extension
-- Print detailed database validation summary after completion
+- Monitor job status and provide real-time progress updates
+- Use SQS queues for job tracking and checkpoint management
 
 You can override environment variables:
 ```bash
-MODEL_NAME="all-MiniLM-L6-v2" BATCH_SIZE=16 INCREMENTAL=false ./scripts/embeddings.sh
+MODEL_NAME="all-MiniLM-L6-v2" FILES_PER_JOB=20 INCREMENTAL=false ./scripts/embeddings.sh
 ```
 
 Environment variables with defaults:
+- `STACK_NAME`: ScotusticianTransformersStack
+- `FILES_PER_JOB`: 10 (files processed per Batch job)
 - `MODEL_NAME`: baai/bge-m3 (Hugging Face org / model)
 - `MODEL_DIMENSION`: 1024 (configurable from 32 to 1024, max 2000 for pgvector compatibility)
-- `BATCH_SIZE`: 4 (GPU) or 16 (CPU)
-- `MAX_WORKERS`: 2 (GPU) or 4 (CPU)
+- `BATCH_SIZE`: 4 (GPU optimized batch size)
+- `MAX_WORKERS`: 1 (Ray workers per Batch job)
 - `INCREMENTAL`: true
 - `S3_BUCKET`: scotustician
 - `RAW_PREFIX`: raw/oa
 
-**Database Credentials**: All PostgreSQL connection details (host, username, password, database name) are automatically retrieved from AWS Secrets Manager (`scotustician-db-credentials`) by the ECS task definition.
+**Infrastructure**: The script uses AWS Batch with GPU spot instances and Ray Data for distributed processing. All PostgreSQL connection details are automatically retrieved from AWS Secrets Manager (`scotustician-db-credentials`).
+
+**Monitoring**: After submission, monitor with:
+```bash
+# View Batch job logs
+aws logs tail /aws/batch/job --follow --region us-east-1
+
+# Check SQS queue status
+aws sqs get-queue-attributes --queue-url <PROCESSING_QUEUE_URL> --attribute-names All
+```
 
 ### SQL Utilities
 
@@ -225,24 +245,33 @@ These queries are useful for building semantic search, clustering, and other dow
 After launching tasks, monitor their progress:
 
 ```bash
-# View real-time logs for ingest tasks
+# View real-time logs for ingest tasks (ECS)
 aws logs tail /ecs/ingest --follow
 
-# View real-time logs for transformer tasks
-aws logs tail /ecs/transformers --follow
+# View real-time logs for embedding generation (AWS Batch)
+aws logs tail /aws/batch/job --follow
 
-# Check task status
+# Check Batch job status
+aws batch describe-jobs --jobs <job-id>
+
+# Check ECS task status
 aws ecs describe-tasks \
   --cluster <cluster-name> \
   --tasks <task-arn>
+
+# Monitor SQS queues for embedding progress
+aws sqs get-queue-attributes \
+  --queue-url <queue-url> \
+  --attribute-names All
 ```
 
 ### Notes
 
-- The ingest task requires public subnet access to reach the Oyez.org API
-- The transformer task should use private subnets when accessing RDS
-- GPU tasks will fall back to CPU if GPU resources are unavailable
+- The ingest task (ECS) requires public subnet access to reach the Oyez.org API
+- The embedding generation uses AWS Batch with GPU spot instances for cost efficiency
+- Ray Data provides fault tolerance and distributed processing within each Batch job
 - All scripts respect the `AWS_REGION` environment variable (defaults to `us-east-1`)
+- SQS queues provide job tracking and checkpoint management for the embedding pipeline
 
 ---
 
