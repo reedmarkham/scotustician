@@ -1,223 +1,280 @@
-import os, sys, logging, time
+import os
+import logging
+import uuid
+import signal
+import sys
 from datetime import datetime
+from typing import Iterator, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-from helpers import (
-    get_existing_oa_ids,
-    get_cases_by_term,
-    process_case,
-    process_oa,
-    write_summary_to_s3,
-    log_junk_to_s3,
-    print_sample_data_validation,
-    setup_signal_handlers,
-    shutdown_requested,
-    active_futures,
-    executor_lock
-)
-
-from tqdm import tqdm
+import dlt
+from dlt.sources.helpers import requests
+from dlt.extract.incremental import Incremental
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
+# Configuration optimized for c5.2xlarge (8 vCPUs, 16GB RAM)
+BUCKET = os.getenv("S3_BUCKET", "scotustician")
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
+MODE = os.getenv("MODE", "ingest")  # "ingest" or "test"
 
-def main() -> None:
-    setup_signal_handlers()
-    
-    logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS}")
-    start_time = time.time()
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    if shutdown_requested.is_set():
-        logger.info("Shutdown requested before processing started")
+# Performance tuning for c5.large (2 vCPUs, 4GB RAM)
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))  # Use 2 workers max for 2 vCPUs
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 5))  # Smaller batches for memory efficiency
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 30))
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
+MEMORY_LIMIT_MB = int(os.getenv("MEMORY_LIMIT_MB", 3072))  # Reserve 1GB for system
+
+OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
+OYEZ_API_BASE = 'https://api.oyez.org'
+
+# Global pipeline instance for junk data handling
+pipeline_instance = None
+
+def log_junk_data(term: int, item: Any, context: str):
+    """Log junk data to pipeline - equivalent to original log_junk_to_s3"""
+    if not pipeline_instance:
         return
-    
-    logger.info("Scanning S3 bucket for existing oral arguments...")
-    existing_oa_ids = get_existing_oa_ids()
-    
-    if shutdown_requested.is_set():
-        logger.info("Shutdown requested after scanning S3")
-        return
-    
-    tasks = []
-    diff_stats = {
-        "total_oas_checked": 0,
-        "existing_oas_skipped": 0,
-        "new_oas_to_download": 0
+        
+    junk_id = uuid.uuid4().hex
+    junk_record = {
+        "junk_id": junk_id,
+        "term": term,
+        "context": context,
+        "item": str(item)[:10000],  # Truncate very large items
+        "timestamp": datetime.now().isoformat(),
+        "_dlt_extracted_at": datetime.now()
     }
+    
+    # Create a simple source for this single record
+    @dlt.source
+    def single_junk_record():
+        @dlt.resource(write_disposition="append", table_name="junk_data")
+        def junk_item():
+            yield junk_record
+        return junk_item
+    
+    # Run the junk data pipeline
+    try:
+        load_info = pipeline_instance.run(single_junk_record())
+        logger.info(f"Logged junk data: {context} for term {term}")
+    except Exception as e:
+        logger.error(f"Failed to log junk data: {e}")
 
-    cases_total = 0
-    cases_with_docket = 0
-    cases_with_oa = 0
-    cases_skipped = 0
-    total_uploaded = 0
-    total_bytes = 0
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    signal_name = signal.Signals(signum).name
+    logger.info(f"Received {signal_name} signal. Shutting down gracefully...")
+    sys.exit(0)
 
-    for term in tqdm(range(START_TERM, END_TERM), desc="Gathering tasks by term", 
-                    disable=shutdown_requested.is_set()):
-        if shutdown_requested.is_set():
-            logger.info(f"Shutdown requested during term {term} processing")
-            break
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    logger.info("Signal handlers configured for graceful shutdown")
+
+@dlt.source
+def oyez_scotus_source():
+    """dlt source for Supreme Court oral arguments from Oyez.org"""
+    
+    @dlt.resource(
+        write_disposition="append",
+        primary_key="id"
+    )
+    def oral_arguments(
+        updated_at: dlt.sources.incremental[datetime] = dlt.sources.incremental("_dlt_extracted_at")
+    ) -> Iterator[Dict[str, Any]]:
+        """Extract oral arguments from Oyez API with incremental loading based on extraction timestamp"""
+        
+        session = requests.Session()
+        session.headers.update({'User-Agent': 'scotustician-dlt/1.0'})
+        
+        # Rate limiting is handled automatically by dlt
+        for term in range(START_TERM, END_TERM):
+            logger.info(f"Processing term {term}")
             
-        try:
-            cases = get_cases_by_term(term)
-            if not cases:
-                logger.warning(f"No cases returned for term {term}")
+            # Get cases for this term
+            cases_url = f"{OYEZ_CASES_TERM_PREFIX}{term}"
+            try:
+                cases_response = session.get(cases_url)
+                cases_response.raise_for_status()
+                cases = cases_response.json()
+            except Exception as e:
+                logger.error(f"Failed to get cases for term {term}: {e}")
                 continue
+            
+            if not isinstance(cases, list):
+                logger.warning(f"Unexpected response format for term {term}")
+                continue
+            
+            processed_count = 0
             for case in cases:
-                if shutdown_requested.is_set():
-                    logger.info(f"Shutdown requested during case processing in term {term}")
-                    break
-                cases_total += 1
-
                 if not isinstance(case, dict):
-                    logger.error(f"Skipping malformed case (term {term}): expected dict but got {type(case)} - {case}")
-                    log_junk_to_s3(term, case, context="non_dict_case")
-                    cases_skipped += 1
+                    log_junk_data(term, case, "non_dict_case")
                     continue
-
+                    
                 docket_number = case.get("docket_number")
                 if not docket_number:
-                    logger.warning(f"Skipping case without docket number: {case}")
-                    log_junk_to_s3(term, case, context="missing_docket_number")
-                    cases_skipped += 1
+                    log_junk_data(term, case, "missing_docket_number")
                     continue
-
-                logger.info(f"Found case with docket number: {docket_number} (term {term})")
-                cases_with_docket += 1
-
+                
+                # Get full case details
+                case_url = f"{OYEZ_API_BASE}/cases/{term}/{docket_number}"
                 try:
-                    subtasks, case_stats = process_case(term, case, timestamp, existing_oa_ids)
-                    diff_stats["total_oas_checked"] += case_stats["checked"]
-                    diff_stats["existing_oas_skipped"] += case_stats["existing"]
-                    diff_stats["new_oas_to_download"] += case_stats["new"]
-                    
-                    if subtasks:
-                        cases_with_oa += 1
-                    else:
-                        cases_skipped += 1
-                    tasks.extend(subtasks)
+                    case_response = session.get(case_url)
+                    case_response.raise_for_status()
+                    case_full = case_response.json()
                 except Exception as e:
-                    logger.error(f"Failed to process case in term {term}: {e}")
-                    log_junk_to_s3(term, case, context="process_case_exception")
-                    cases_skipped += 1
-        except Exception as e:
-            logger.error(f"Failed to process term {term}: {e}", exc_info=True)
-
-    logger.info("\nIncremental Load Diff Summary:")
-    logger.info(f"  - Total OAs in API: {diff_stats['total_oas_checked']}")
-    logger.info(f"  - Existing OAs (skipped): {diff_stats['existing_oas_skipped']}")
-    logger.info(f"  - New OAs to download: {diff_stats['new_oas_to_download']}")
-    logger.info(f"  - Percentage new: {(diff_stats['new_oas_to_download'] / max(diff_stats['total_oas_checked'], 1) * 100):.1f}%")
-    
-    if shutdown_requested.is_set():
-        logger.info("Shutdown requested before task processing")
-    elif len(tasks) == 0:
-        logger.info("\nNo new oral arguments to download. S3 bucket is up to date!")
-    else:
-        logger.info(f"\nDispatching {len(tasks)} new oral argument tasks to thread pool...")
-        
-        interrupted_count = 0
-        try:
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                # Submit all futures and track them
-                futures = {}
-                for args in tasks:
-                    if shutdown_requested.is_set():
-                        logger.info("Shutdown requested during task submission")
-                        break
-                    future = executor.submit(process_oa, *args)
-                    futures[future] = args
-                    with executor_lock:
-                        active_futures.add(future)
+                    logger.error(f"Failed to get case details for {docket_number}: {e}")
+                    continue
                 
-                completed_futures = set()
-                pbar = tqdm(total=len(futures), desc="Processing OAs", 
-                           disable=shutdown_requested.is_set())
+                # Check for oral arguments
+                oral_argument_audio = case_full.get('oral_argument_audio', [])
+                if not oral_argument_audio:
+                    continue
                 
-                while futures and not shutdown_requested.is_set():
-                    try:
-                        for future in as_completed(futures.keys(), timeout=1.0):
-                            if future in completed_futures:
-                                continue
-                                
-                            completed_futures.add(future)
-                            with executor_lock:
-                                active_futures.discard(future)
-                            
-                            try:
-                                size_mb = future.result()
-                                if size_mb is not None:
-                                    total_uploaded += 1
-                                    total_bytes += size_mb
-                            except Exception as e:
-                                logger.error(f"Exception during task: {e}", exc_info=True)
-                            
-                            pbar.update(1)
-                            
-                            if len(completed_futures) == len(futures):
-                                break
+                logger.info(f"Found {len(oral_argument_audio)} oral argument(s) for case {docket_number}")
+                
+                # Process each oral argument
+                for idx, oa in enumerate(oral_argument_audio):
+                    oa_href = oa.get('href')
+                    oa_id = oa.get('id')
                     
-                    except TimeoutError:
+                    if not oa_href or not oa_id:
                         continue
-                
-                pbar.close()
-                
-                if shutdown_requested.is_set():
-                    logger.info("Shutdown requested, cancelling remaining tasks...")
-                    cancelled_count = 0
-                    with executor_lock:
-                        for future in list(active_futures):
-                            if future.cancel():
-                                cancelled_count += 1
                     
-                    interrupted_count = len(futures) - len(completed_futures)
-                    logger.info(f"Cancelled {cancelled_count} tasks, {interrupted_count} tasks interrupted")
+                    try:
+                        # Get oral argument details
+                        oa_response = session.get(oa_href)
+                        oa_response.raise_for_status()
+                        oa_data = oa_response.json()
+                        
+                        # Add metadata for tracking and compatibility
+                        current_time = datetime.now()
+                        oa_data.update({
+                            "id": oa_id,  # Ensure ID is present for primary key
+                            "term": term,
+                            "case_id": case.get('ID'),
+                            "docket_number": docket_number,
+                            "session": idx,
+                            "_dlt_extracted_at": current_time,
+                            "_dlt_load_id": f"{term}_{docket_number}_{oa_id}",
+                            "scotus_metadata": {
+                                "extraction_timestamp": current_time.isoformat(),
+                                "source": "oyez_api",
+                                "version": "dlt_v1"
+                            }
+                        })
+                        
+                        processed_count += 1
+                        yield oa_data
+                        logger.info(f"Processed OA {oa_id} for case {docket_number} (term {term})")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to process OA {oa_id}: {e}")
+                        continue
+            
+            logger.info(f"Completed term {term}: processed {processed_count} oral arguments")
+
+    @dlt.resource(
+        write_disposition="append",
+        table_name="ingestion_summary"
+    )
+    def ingestion_summary() -> Iterator[Dict[str, Any]]:
+        """Create ingestion summary similar to the original pipeline"""
         
-        except KeyboardInterrupt:
-            logger.info("KeyboardInterrupt received during processing")
-            shutdown_requested.set()
+        timestamp = datetime.now()
+        summary = {
+            "timestamp": timestamp.strftime('%Y%m%d_%H%M%S'),
+            "extraction_start": timestamp.isoformat(),
+            "source": "oyez_api",
+            "pipeline": "dlt_migration",
+            "start_term": START_TERM,
+            "end_term": END_TERM,
+            "incremental_load": True,
+            "_dlt_extracted_at": timestamp
+        }
+        
+        yield summary
 
-    duration = time.time() - start_time
+    return [oral_arguments, ingestion_summary]
 
-    summary = {
-        "timestamp": timestamp,
-        "cases_total": cases_total,
-        "cases_with_docket": cases_with_docket,
-        "cases_with_oa": cases_with_oa,
-        "cases_skipped": cases_skipped,
-        "oral_arguments_attempted": len(tasks),
-        "oral_arguments_uploaded": total_uploaded,
-        "total_data_uploaded_mb": round(total_bytes, 2),
-        "total_time_seconds": round(duration, 2),
-        "incremental_load": True,
-        "existing_oas_in_s3": len(existing_oa_ids),
-        "total_oas_checked": diff_stats["total_oas_checked"],
-        "existing_oas_skipped": diff_stats["existing_oas_skipped"],
-        "new_oas_downloaded": diff_stats["new_oas_to_download"],
-        "interrupted": shutdown_requested.is_set()
-    }
-
-    logger.info("Ingestion Summary:")
-    for k, v in summary.items():
-        logger.info(f"• {k.replace('_', ' ').capitalize()}: {v}")
+def run_test_pipeline():
+    """Run test pipeline with limited data"""
+    logger.info("Running test pipeline")
     
-    if shutdown_requested.is_set():
-        logger.info("Process was interrupted by shutdown signal")
-        logger.info("Remaining files will be processed on next run (incremental mode)")
-
-    if not shutdown_requested.is_set():
-        write_summary_to_s3(summary, timestamp)
-        print_sample_data_validation(total_uploaded)
+    pipeline = dlt.pipeline(
+        pipeline_name="scotustician_test",
+        destination="filesystem",
+        dataset_name="test_data"
+    )
     
-    if shutdown_requested.is_set():
-        sys.exit(130)  # 128 + SIGINT (2) - standard convention for interrupted processes
-    else:
-        sys.exit(0)    # All processing completed
+    # Override term range for testing
+    global START_TERM, END_TERM
+    original_start, original_end = START_TERM, END_TERM
+    START_TERM = 2023
+    END_TERM = 2024
+    
+    try:
+        source = oyez_scotus_source()
+        load_info = pipeline.run(source)
+        
+        logger.info("Test pipeline completed successfully!")
+        logger.info(f"Dataset: {load_info.dataset_name}")
+        
+    except Exception as e:
+        logger.error(f"Test pipeline failed: {e}", exc_info=True)
+        raise
+    finally:
+        # Restore original values
+        START_TERM, END_TERM = original_start, original_end
+
+def main():
+    """Main pipeline execution"""
+    global pipeline_instance
+    
+    setup_signal_handlers()
+    
+    if MODE == "test":
+        run_test_pipeline()
+        return
+    
+    logger.info("Starting dlt-based Oyez ingestion pipeline with incremental loading")
+    
+    # Create pipeline - configuration loaded from .dlt/ directory
+    pipeline = dlt.pipeline(
+        pipeline_name="scotustician_ingest",
+        destination="s3",
+        dataset_name="scotustician"
+    )
+    
+    pipeline_instance = pipeline
+    
+    try:
+        # Run the pipeline
+        source = oyez_scotus_source()
+        load_info = pipeline.run(source)
+        
+        # Print results
+        logger.info("Pipeline completed successfully!")
+        logger.info(f"Dataset: {load_info.dataset_name}")
+        
+        # Print table statistics
+        for package in load_info.load_packages:
+            logger.info(f"Load package: {package.load_id}")
+            if hasattr(package, 'jobs') and package.jobs:
+                for job in package.jobs:
+                    if job.job_file_info:
+                        table_name = job.job_file_info.table_name
+                        logger.info(f"  Table '{table_name}': {job.job_file_info.file_size} bytes")
+        
+        # Show pipeline state info
+        logger.info(f"Pipeline state keys: {list(pipeline.state.keys())}")
+        
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()

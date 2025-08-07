@@ -1,7 +1,9 @@
 import os, json, logging, time, uuid
-from typing import Any, Optional
+from typing import Any, Optional, Dict, Iterator
+from datetime import datetime
 
 import requests, boto3
+import dlt
 from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -97,79 +99,38 @@ def get_cases_by_term(term: int) -> list:
 def get_case_full(term: int, docket_number: str) -> Optional[dict]:
     return request(oyez_api_case(term, docket_number))
 
-def process_oa(term: int, case: dict, session: int, oa: dict, timestamp: str) -> Optional[float]:
-    case_id = case.get('ID')
-    docket_number = case.get('docket_number')
-    oa_id = oa.get('id')
-    oa_href = oa.get('href')
 
-    if not oa_id or not oa_href:
-        logger.warning(f"Skipping malformed OA entry: {oa}")
-        return None
 
-    key = f'raw/oa/{oa_id}_{timestamp}.json'
-    start_time = time.time()
-
-    oa_json = request(oa_href)
-    if oa_json is None:
-        logger.warning(f"No data for OA {oa_id} (term {term}, docket {docket_number})")
-        return None
-
-    oa_json.update({
+# DLT-compatible junk data handling functions
+def log_junk_data_to_dlt(pipeline, term: int, item: Any, context: str):
+    """Log junk data using dlt pipeline - integrated junk_handler functionality"""
+    junk_id = uuid.uuid4().hex
+    junk_record = {
+        "junk_id": junk_id,
         "term": term,
-        "case_id": case_id,
-        "docket_number": docket_number,
-        "session": session,
-    })
-
-    serialized = json.dumps(oa_json)
-    size_bytes = len(serialized.encode("utf-8"))
-    size_mb = size_bytes / (1024 * 1024)
-
-    s3.put_object(Body=serialized, Bucket=BUCKET, Key=key)
-    duration = time.time() - start_time
-    logger.info(f"Uploaded: s3://{BUCKET}/{key} | {size_mb:.2f} MB | ⏱ {duration:.2f}s")
-
-    return size_mb
-
-def process_case(term: int, case: dict, timestamp: str, existing_oa_ids: set) -> tuple[list, dict]:
-    """Process a case and return tasks for new OAs and diff stats."""
-    docket_number = case.get('docket_number')
-    stats = {"checked": 0, "existing": 0, "new": 0}
+        "context": context,
+        "item": str(item)[:10000],  # Truncate very large items
+        "timestamp": datetime.now().isoformat(),
+        "_dlt_extracted_at": datetime.now()
+    }
     
-    if not docket_number:
-        logger.warning(f"Skipping case without docket number: {case}")
-        log_junk_to_s3(term, case, context="missing_docket_number")
-        return [], stats
-
-    case_full = get_case_full(term, docket_number)
-    if not case_full:
-        logger.warning(f"No full case data for {docket_number} (term {term})")
-        return [], stats
-    if 'oral_argument_audio' not in case_full or not case_full['oral_argument_audio']:
-        logger.info(f"No oral arguments for {docket_number} (term {term})")
-        return [], stats
-
-    oas = case_full['oral_argument_audio']
-    logger.info(f"Case {docket_number} (term {term}) has {len(oas)} oral argument(s)")
+    # Create a simple source for this single record
+    @dlt.source
+    def single_junk_record():
+        @dlt.resource(write_disposition="append", table_name="junk_data")
+        def junk_item():
+            yield junk_record
+        return junk_item
     
-    tasks = []
-    for idx, oa in enumerate(oas):
-        stats["checked"] += 1
-        oa_id = oa.get('id')
-        
-        if oa_id and oa_id in existing_oa_ids:
-            logger.debug(f"Skipping existing OA: {oa_id} for case {docket_number}")
-            stats["existing"] += 1
-        else:
-            tasks.append((term, case, idx, oa, timestamp))
-            stats["new"] += 1
-            if oa_id:
-                logger.info(f"New OA to download: {oa_id} for case {docket_number}")
-
-    return tasks, stats
+    # Run the junk data pipeline
+    try:
+        load_info = pipeline.run(single_junk_record())
+        logger.info(f"Logged junk data: {context} for term {term}")
+    except Exception as e:
+        logger.error(f"Failed to log junk data: {e}")
 
 def print_sample_data_validation(total_uploaded: int):
+    """Sample data validation for uploaded records"""
     logger.info("\nSample Data Validation:")
     if total_uploaded > 0:
         try:
@@ -200,3 +161,21 @@ def print_sample_data_validation(total_uploaded: int):
                     
         except Exception as e:
             logger.error(f"Failed to print sample data: {e}")
+
+# Legacy function for backward compatibility - use DLT pipeline instead
+def legacy_log_junk_to_s3(term: int, item: Any, context: str):
+    """Legacy function - use DLT pipeline junk handling instead"""
+    logger.warning("legacy_log_junk_to_s3 is deprecated, use DLT pipeline junk handling")
+    junk_id = uuid.uuid4().hex
+    key = f'junk/{term}_{context}_{junk_id}.json'
+    body = json.dumps({
+        "term": term,
+        "context": context,
+        "item": item
+    }, indent=2)
+
+    try:
+        s3.put_object(Body=body.encode('utf-8'), Bucket=BUCKET, Key=key)
+        logger.info(f"Logged junk case to s3://{BUCKET}/{key}")
+    except Exception as e:
+        logger.error(f"Failed to log junk to S3: {e}")
