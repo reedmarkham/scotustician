@@ -39,12 +39,12 @@ jobs:
               - '.github/workflows/**'
             ingest:
               - 'infrastructure/**'
-              - 'ingest/*'
-              - 'ingest/**/*'
+              - 'services/ingest/*'
+              - 'services/ingest/**/*'
             transformers:
               - 'infrastructure/**'
-              - 'transformers/*'
-              - 'transformers/**/*'
+              - 'services/transformers/*'
+              - 'services/transformers/**/*'
               - '.github/workflows/**'
 
   deploy_shared:

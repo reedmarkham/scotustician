@@ -30,14 +30,15 @@ export class ScotusticianIngestStack extends Stack {
     Tags.of(this).add('Project', 'scotustician');
     Tags.of(this).add('Stack', 'ingest');
 
-    // Reduced for rate-limited ingestion
-    const taskCpu = 512;
-    const taskMemory = 2048;
+    // Optimized for c5.large (2 vCPUs, 4GB RAM) - DLT-based ingestion
+    const taskCpu = 1024;  // 1 vCPU for DLT pipeline
+    const taskMemory = 3072;  // 3GB memory, leaving 1GB for system overhead
 
     const bucket = s3.Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
-      directory: '../ingest',
+      directory: '../services/ingest',
+      file: 'Dockerfile',
       buildArgs: {
         BUILD_TIMESTAMP: Date.now().toString()
       },
@@ -72,10 +73,18 @@ export class ScotusticianIngestStack extends Stack {
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
-        RAW_PREFIX: 'raw/',
-        START_TERM: '1980',
+        START_TERM: currentYear.toString(),
         END_TERM: currentYear.toString(),
-        MAX_WORKERS: '2', // Reduced from 8 to align with lower resources
+        DLT_PROJECT_DIR: '/code',
+        DLT_PIPELINE_DIR: '/code/.dlt',
+        AWS_DEFAULT_REGION: 'us-east-1',
+        // c5.large optimizations
+        MAX_WORKERS: '2',
+        BATCH_SIZE: '5',
+        REQUEST_TIMEOUT: '30',
+        MAX_RETRIES: '3',
+        MEMORY_LIMIT_MB: '3072',
+        MODE: 'ingest',
       },
     });
 

@@ -3,7 +3,7 @@ import os, logging
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from helpers import (
+from processors import (
     batch_process_files,
     process_single_document
 )

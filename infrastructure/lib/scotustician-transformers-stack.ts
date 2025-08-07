@@ -101,7 +101,7 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
-          directory: '../transformers',
+          directory: '../services/transformers',
           buildArgs: {
             BUILDKIT_INLINE_CACHE: '1',
             BUILD_DATE: new Date().toISOString(),
@@ -153,7 +153,7 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
-          MODEL_NAME: 'Qwen/Qwen3-Embedding-0.6B',
+          MODEL_NAME: 'baai/bge-m3',
           MODEL_DIMENSION: '1024',
           BATCH_SIZE: '4',
           MAX_WORKERS: '2',
@@ -184,7 +184,7 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
-          MODEL_NAME: 'Qwen/Qwen3-Embedding-0.6B',
+          MODEL_NAME: 'baai/bge-m3',
           MODEL_DIMENSION: '1024',
           BATCH_SIZE: '16',
           MAX_WORKERS: '4',
@@ -269,7 +269,7 @@ export class ScotusticianTransformersStack extends Stack {
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
-          MODEL_NAME: 'Qwen/Qwen3-Embedding-0.6B',
+          MODEL_NAME: 'baai/bge-m3',
           MODEL_DIMENSION: '1024',
           BATCH_SIZE: '4',
           MAX_WORKERS: '1',
