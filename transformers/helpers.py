@@ -1,16 +1,10 @@
-import os
-import logging
-import io
-import json
-import xml.etree.ElementTree as ET
+import os, logging, io, json, xml.etree.ElementTree as ET
 from typing import List, Dict
 
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import boto3
-import botocore.exceptions
-import psycopg2
+import boto3, botocore.exceptions, psycopg2
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
