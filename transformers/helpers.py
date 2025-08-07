@@ -1,15 +1,13 @@
-import logging, io, json, os, time
-# Disable tokenizers parallelism to avoid warnings in multi-threaded environment
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import logging, io, json, os, time, threading, signal
 from typing import List, Dict
 import xml.etree.ElementTree as ET
-from tqdm import tqdm
-import threading
 
-import boto3, botocore.exceptions
+# Disable tokenizers parallelism to avoid warnings in multi-threaded environment
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import psycopg2, boto3, botocore.exceptions
+from tqdm import tqdm
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
-import psycopg2
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -20,13 +18,10 @@ s3 = boto3.client("s3")
 MODEL_NAME = os.environ.get('MODEL_NAME', 'baai/bge-m3')
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-# Import shutdown_requested from main module to check for interruptions
-# This will be set by the main module's signal handler
-try:
-    from main import shutdown_requested
-except ImportError:
-    # Create a dummy event if running helpers standalone
-    shutdown_requested = threading.Event()
+# Global shutdown flag for graceful shutdown handling
+shutdown_requested = threading.Event()
+active_futures = set()
+executor_lock = threading.Lock()
 
 def save_processing_checkpoint(processed_keys: set, checkpoint_file: str = "/tmp/scotustician_checkpoint.json"):
     """Save processing checkpoint to allow resumption after interruption"""
@@ -68,7 +63,7 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.load(obj['Body'])
 
-        # --- Validate expected structure ---
+        # Data validation
         if "transcript" not in data or "sections" not in data["transcript"]:
             raise ValueError("Missing expected keys: 'transcript.sections'")
 
@@ -76,7 +71,7 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         if not isinstance(sections, list) or len(sections) == 0:
             raise ValueError("Transcript 'sections' is empty or malformed")
 
-        # --- Generate XML ---
+        # Generate XML
         transcript_root = ET.Element("transcript")
         count = 0
         # Count total text blocks for progress bar
@@ -99,7 +94,6 @@ def get_transcript_s3(bucket: str, key: str) -> str:
                         raise InterruptedError("Processing interrupted during turn processing")
                         
                     speaker = turn.get("speaker", {}).get("name", "Unknown")
-                    # speaker_id = str(turn.get("speaker", {}).get("id", ""))  # Commented out - not needed for embeddings
                     for block in turn.get("text_blocks", []):
                         text = block.get("text")
                         if text:
@@ -107,7 +101,6 @@ def get_transcript_s3(bucket: str, key: str) -> str:
                                 transcript_root,
                                 "utterance",
                                 speaker=speaker
-                                # speaker_id=speaker_id  # Commented out - not needed for embeddings
                             )
                             utterance_el.text = text
                             count += 1
@@ -121,7 +114,7 @@ def get_transcript_s3(bucket: str, key: str) -> str:
         ET.ElementTree(transcript_root).write(xml_str_io, encoding="unicode")
         xml_string = xml_str_io.getvalue()
 
-        # --- Upload XML to /xml/<oa_id>.xml ---
+        # Upload XML to /xml/<oa_id>.xml
         oa_id = key.split("/")[-1].replace(".json", "")
         xml_key = f"xml/{oa_id}.xml"
         s3.put_object(Bucket=bucket, Key=xml_key, Body=xml_string.encode("utf-8"))
@@ -165,7 +158,7 @@ def process_transcript_with_chunking(
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.load(obj['Body'])
 
-        # --- Validate expected structure ---
+        # Data validation
         if "transcript" not in data or "sections" not in data["transcript"]:
             raise ValueError("Missing expected keys: 'transcript.sections'")
 
@@ -173,7 +166,7 @@ def process_transcript_with_chunking(
         if not isinstance(sections, list) or len(sections) == 0:
             raise ValueError("Transcript 'sections' is empty or malformed")
 
-        # --- Process by section for better semantic chunking ---
+        # Process by OA section (petitioner, respondent, rebuttal) for document chunking
         all_utterances_data = []
         section_chunks = []
         global_utterance_idx = 0
@@ -259,7 +252,6 @@ def process_transcript_with_chunking(
 
         logger.info(f"Processed {len(all_utterances_data)} total utterances across {len(section_chunks)} sections.")
         
-        # Insert raw utterance data to oa_text table
         if shutdown_requested.is_set():
             logger.info("Shutdown requested before database insert")
             raise InterruptedError("Processing interrupted before database insert")
@@ -270,7 +262,6 @@ def process_transcript_with_chunking(
             logger.info("Shutdown requested before embedding generation")
             raise InterruptedError("Processing interrupted before embedding generation")
         
-        # Generate embeddings for section chunks
         logger.info(f"Generating embeddings for {len(section_chunks)} section chunks...")
         model = SentenceTransformer(model_name)
         model.eval()
@@ -323,10 +314,8 @@ def process_transcript_with_chunking(
 
 
 def process_single_document(bucket: str, input_key: str, model_name: str, model_dimension: int, batch_size: int):
-    """Process a single document from S3 (moved from main.py)"""
     meta = extract_metadata_from_key(input_key)
     
-    # Get database connection config from environment
     conn = psycopg2.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"),
         user=os.getenv("POSTGRES_USER", "postgres"),
@@ -342,7 +331,6 @@ def process_single_document(bucket: str, input_key: str, model_name: str, model_
             bucket, input_key, model_name, model_dimension, batch_size, conn, meta
         )
         
-        # Insert document chunk embeddings
         insert_document_chunk_embeddings(chunks, conn)
         
         logger.info(f"Successfully processed single document: {input_key}")
@@ -360,7 +348,6 @@ def truncate_to_tokens(text: str, max_tokens: int = 8000) -> str:
     return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
 
 def insert_oa_text_data(utterances_data: List[Dict], conn):
-    """Insert raw utterance data into oa_text table"""
     logger.info(f"Inserting {len(utterances_data)} utterances to oa_text table")
     
     with conn.cursor() as cur:
@@ -404,7 +391,6 @@ def insert_oa_text_data(utterances_data: List[Dict], conn):
     logger.info(f"Successfully inserted {len(utterances_data)} utterances")
 
 def insert_document_chunk_embeddings(chunks: List[Dict], conn):
-    """Insert section-based document chunk embeddings into database"""
     logger.info(f"Inserting {len(chunks)} section-based chunk embeddings")
     
     with conn.cursor() as cur:
@@ -466,13 +452,139 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
         "oa_id": oa_id,
     }
 
+def signal_handler(signum, frame):
+    signal_name = signal.Signals(signum).name
+    logger.info(f"Received {signal_name} signal. Initiating graceful shutdown...")
+    shutdown_requested.set()
+
+def setup_signal_handlers():
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    logger.info("Signal handlers configured for graceful shutdown")
+
+def get_db_connection():
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+    POSTGRES_USER = os.getenv("POSTGRES_USER")
+    POSTGRES_PASS = os.getenv("POSTGRES_PASS")
+    POSTGRES_DB = os.getenv("POSTGRES_DB")
+    
+    if not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASS, POSTGRES_DB]):
+        raise EnvironmentError("Missing required Postgres environment variables")
+    
+    return psycopg2.connect(
+        host=POSTGRES_HOST,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASS,
+        database=POSTGRES_DB
+    )
+
+def get_processed_keys():
+    processed_keys = set()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT s3_key 
+                    FROM scotustician.transcript_embeddings 
+                    WHERE s3_key IS NOT NULL
+                """)
+                processed_keys = {row[0] for row in cursor.fetchall()}
+                logger.info(f"Found {len(processed_keys)} already processed files in database")
+    except Exception as e:
+        logger.warning(f"Could not fetch processed keys from database: {e}")
+    return processed_keys
+
+def list_s3_keys(bucket: str, prefix: str):
+    s3 = boto3.client("s3")
+    paginator = s3.get_paginator("list_objects_v2")
+    logger.info(f"Listing objects in s3://{bucket}/{prefix}...")
+    keys = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if shutdown_requested.is_set():
+            logger.info("Shutdown requested during S3 listing, stopping...")
+            break
+        for obj in page.get("Contents", []):
+            keys.append(obj["Key"])
+    
+    INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
+    if INCREMENTAL:
+        processed_keys = get_processed_keys()
+        initial_count = len(keys)
+        keys = [k for k in keys if k not in processed_keys]
+        logger.info(f"Incremental mode: filtered {initial_count - len(keys)} already processed files")
+    
+    logger.info(f"Found {len(keys)} objects to process")
+    return keys
+
+def process_key(key: str):
+    """Process a single key with interruption checking"""
+    if shutdown_requested.is_set():
+        return f"Skipped: {key} (shutdown requested)"
+    
+    BUCKET = os.getenv("S3_BUCKET", "scotustician")
+    MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
+    MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", 24))
+    
+    try:
+        meta = extract_metadata_from_key(key)
+        
+        if shutdown_requested.is_set():
+            return f"Interrupted: {key} (shutdown during processing)"
+        
+        with get_db_connection() as conn:
+            chunks = process_transcript_with_chunking(
+                BUCKET, key, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, conn, meta
+            )
+            
+            if shutdown_requested.is_set():
+                logger.warning(f"Shutdown requested during chunking for {key}")
+                return f"Interrupted: {key} (shutdown during chunking)"
+            
+            insert_document_chunk_embeddings(chunks, conn)
+
+        if shutdown_requested.is_set():
+            return f"Interrupted: {key} (shutdown after processing)"
+        
+        return f"Processed: {key} ({len(chunks)} section chunks created)"
+    except Exception as e:
+        if shutdown_requested.is_set():
+            return f"Interrupted: {key} | {e}"
+        return f"Failed: {key} | {e}"
+
+def graceful_shutdown_executor(executor, timeout=30):
+    """Gracefully shutdown ThreadPoolExecutor with timeout"""
+    logger.info(f"Initiating graceful shutdown of executor (timeout: {timeout}s)...")
+    
+    # Cancel pending futures
+    cancelled_count = 0
+    with executor_lock:
+        for future in list(active_futures):
+            if future.cancel():
+                cancelled_count += 1
+    
+    logger.info(f"Cancelled {cancelled_count} pending tasks")
+    
+    executor.shutdown(wait=False)
+    
+    # Wait for running tasks to complete with timeout
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        with executor_lock:
+            running_futures = [f for f in active_futures if f.running()]
+        if not running_futures:
+            logger.info("All running tasks completed gracefully")
+            return True
+        time.sleep(0.5)
+    
+    logger.warning(f"Timeout reached, {len(running_futures)} tasks may still be running")
+    return False
+
 def ensure_tables_exist(conn):
     logger.info("Ensuring Postgres tables exist...")
     
-    # Get the path to the SQL file
     sql_file_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
-    
-    # Read and execute the SQL file
+
     with open(sql_file_path, 'r') as sql_file:
         sql_content = sql_file.read()
     

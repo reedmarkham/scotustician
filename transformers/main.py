@@ -1,11 +1,8 @@
 import os
-import signal
 import sys
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-import threading
-import time
 
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -18,11 +15,19 @@ from helpers import (
     ensure_tables_exist,
     insert_case_embedding_to_postgres,
     insert_document_chunk_embeddings,
-    process_single_document
+    process_single_document,
+    signal_handler,
+    setup_signal_handlers,
+    get_db_connection,
+    get_processed_keys,
+    list_s3_keys,
+    process_key,
+    graceful_shutdown_executor,
+    shutdown_requested,
+    active_futures,
+    executor_lock
 )
 
-import boto3
-import psycopg2
 
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
@@ -32,157 +37,9 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", 24))
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 1))
 INCREMENTAL = os.getenv("INCREMENTAL", "true").lower() == "true"
 
-s3 = boto3.client("s3")
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Global shutdown flag
-shutdown_requested = threading.Event()
-active_futures = set()
-executor_lock = threading.Lock()
-
-# Validate Postgres env vars
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASS = os.getenv("POSTGRES_PASS")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-
-if not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASS, POSTGRES_DB]):
-    raise EnvironmentError("Missing required Postgres environment variables")
-
-logger.info(f"Connecting to Postgres at {POSTGRES_HOST}")
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully"""
-    signal_name = signal.Signals(signum).name
-    logger.info(f"Received {signal_name} signal. Initiating graceful shutdown...")
-    shutdown_requested.set()
-
-def setup_signal_handlers():
-    """Setup signal handlers for graceful shutdown"""
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    logger.info("Signal handlers configured for graceful shutdown")
-
-def get_db_connection():
-    return psycopg2.connect(
-        host=POSTGRES_HOST,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASS,
-        database=POSTGRES_DB
-    )
-
-def get_processed_keys():
-    """Get list of keys that have already been processed"""
-    processed_keys = set()
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT DISTINCT s3_key 
-                    FROM scotustician.transcript_embeddings 
-                    WHERE s3_key IS NOT NULL
-                """)
-                processed_keys = {row[0] for row in cursor.fetchall()}
-                logger.info(f"Found {len(processed_keys)} already processed files in database")
-    except Exception as e:
-        logger.warning(f"Could not fetch processed keys from database: {e}")
-    return processed_keys
-
-def list_s3_keys(bucket: str, prefix: str):
-    paginator = s3.get_paginator("list_objects_v2")
-    logger.info(f"Listing objects in s3://{bucket}/{prefix}...")
-    keys = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        if shutdown_requested.is_set():
-            logger.info("Shutdown requested during S3 listing, stopping...")
-            break
-        for obj in page.get("Contents", []):
-            keys.append(obj["Key"])
-    
-    if INCREMENTAL:
-        processed_keys = get_processed_keys()
-        initial_count = len(keys)
-        keys = [k for k in keys if k not in processed_keys]
-        logger.info(f"Incremental mode: filtered {initial_count - len(keys)} already processed files")
-    
-    logger.info(f"Found {len(keys)} objects to process")
-    return keys
-
-def process_key(key: str):
-    """Process a single key with interruption checking"""
-    if shutdown_requested.is_set():
-        return f"⏹️ Skipped: {key} (shutdown requested)"
-    
-    try:
-        meta = extract_metadata_from_key(key)
-        
-        # Check for shutdown before heavy processing
-        if shutdown_requested.is_set():
-            return f"⏹️ Interrupted: {key} (shutdown during processing)"
-        
-        with get_db_connection() as conn:
-            # Use new chunking approach
-            chunks = process_transcript_with_chunking(
-                BUCKET, key, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE, conn, meta
-            )
-            
-            if shutdown_requested.is_set():
-                logger.warning(f"Shutdown requested during chunking for {key}")
-                return f"⏹️ Interrupted: {key} (shutdown during chunking)"
-            
-            # Insert document chunk embeddings
-            insert_document_chunk_embeddings(chunks, conn)
-            
-            # Generate case-level embedding (for backward compatibility if needed)
-            # Note: This now uses the first chunk's XML for the case embedding
-            if chunks and not shutdown_requested.is_set():
-                chunk_xml = chunks[0].get('chunk_xml', '')
-                if chunk_xml:
-                    speaker_list = extract_speaker_list(chunk_xml)
-                    embedding, text = generate_case_embedding(chunk_xml, MODEL_NAME, MODEL_DIMENSION, BATCH_SIZE)
-                    insert_case_embedding_to_postgres(
-                        embedding, text, meta, key, conn, speaker_list
-                    )
-        
-        if shutdown_requested.is_set():
-            return f"⏹️ Interrupted: {key} (shutdown after processing)"
-        
-        return f"✅ Processed: {key} ({len(chunks)} section chunks created)"
-    except Exception as e:
-        if shutdown_requested.is_set():
-            return f"⏹️ Interrupted: {key} | {e}"
-        return f"❌ Failed: {key} | {e}"
-
-
-def graceful_shutdown_executor(executor, timeout=30):
-    """Gracefully shutdown ThreadPoolExecutor with timeout"""
-    logger.info(f"Initiating graceful shutdown of executor (timeout: {timeout}s)...")
-    
-    # Cancel pending futures
-    cancelled_count = 0
-    with executor_lock:
-        for future in list(active_futures):
-            if future.cancel():
-                cancelled_count += 1
-    
-    logger.info(f"Cancelled {cancelled_count} pending tasks")
-    
-    # Shutdown executor
-    executor.shutdown(wait=False)
-    
-    # Wait for running tasks to complete with timeout
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        with executor_lock:
-            running_futures = [f for f in active_futures if f.running()]
-        if not running_futures:
-            logger.info("All running tasks completed gracefully")
-            return True
-        time.sleep(0.5)
-    
-    logger.warning(f"Timeout reached, {len(running_futures)} tasks may still be running")
-    return False
 
 def main():
     # Setup signal handlers first
@@ -251,9 +108,9 @@ def main():
                             try:
                                 result = future.result()
                                 logger.info(result)
-                                if result.startswith("✅"):
+                                if result.startswith("Processed"):
                                     processed_count += 1
-                                elif result.startswith("⏹️"):
+                                elif result.startswith("Interrupted") or result.startswith("Skipped"):
                                     interrupted_count += 1
                                 else:
                                     failed_count += 1
