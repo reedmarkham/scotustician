@@ -10,8 +10,6 @@ from helpers import (
     write_summary_to_s3,
     log_junk_to_s3,
     print_sample_data_validation,
-    BUCKET,
-    signal_handler,
     setup_signal_handlers,
     shutdown_requested,
     active_futures,
@@ -27,9 +25,7 @@ MAX_WORKERS = int(os.getenv("MAX_WORKERS", 8))
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
 
-
 def main() -> None:
-    # Setup signal handlers first
     setup_signal_handlers()
     
     logger.info(f"Starting Oyez ingestion | Workers={MAX_WORKERS}")
@@ -218,7 +214,6 @@ def main() -> None:
         write_summary_to_s3(summary, timestamp)
         print_sample_data_validation(total_uploaded)
     
-    # Exit with appropriate code
     if shutdown_requested.is_set():
         sys.exit(130)  # 128 + SIGINT (2) - standard convention for interrupted processes
     else:
