@@ -1,6 +1,6 @@
 # scotustician
 
-**scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions. The goal with generating these embeddings is that we can then understand the workings of the Court in a more quantitative way.
+**scotustician** is a data ingestion pipeline and embedding generation service for Supreme Court of the United States (SCOTUS) oral argument (OA) transcripts, deployed on AWS using Docker, CDK, and GitHub Actions. The goal with generating these embeddings is that we can then understand the Court in a more quantitative way.
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system to enable data-driven interaction with SCOTUS OA transcripts rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
 
