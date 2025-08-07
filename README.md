@@ -12,10 +12,28 @@ Data Pipeline:
 * Also serialized data (XML) for the transcript is written out to S3.
 3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which has been deployed separately.
 
+## Oral Argument Structure
+
+Supreme Court oral arguments follow a structured format that the system preserves through section-based chunking. Using *Plyler v. Doe* (1981) as an example:
+
+**Typical Structure (3 sections):**
+- **Petitioner Arguments** (~20-30 min): Opening attorney presents their case
+- **Respondent Arguments** (~20-30 min): Opposing attorney presents their case  
+- **Petitioner Rebuttal** (~5-10 min): Brief closing response
+
+**Complex Cases (4-5+ sections):**
+Cases with multiple attorneys or amicus participants may have additional sections, such as:
+- **Multiple Respondent Counsel**: Different attorneys representing various aspects of the case
+- **Government Participation**: Solicitor General arguments as separate sections
+- **Amicus Arguments**: Third-party advocates in cases of broad public interest
+
+Each section represents a natural break when attorneys change at the podium, making section-based embedding generation ideal for preserving the logical flow of legal arguments. Sections typically range from 1,300-5,500 tokens, optimal for modern embedding models.
+
 ```
 scotustician/
-├── ingest/            	# Python code to ingest raw data from Oyez.org API to S3
-├── transformers/      	# Python code to generate and store text embeddings in PostgreSQL
+├── services/          	# Application services
+│   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
+│   └── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
 ├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
 ```

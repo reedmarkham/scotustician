@@ -33,18 +33,167 @@ LEFT JOIN scotustician.document_chunk_embeddings c
 WHERE t.case_id = '2023_smith-v-jones'
 ORDER BY t.utterance_index;
 
--- 3. Analyze chunking distribution (sections per case)
+-- 3. Section-level token analysis for monitoring (similar to JSON analysis)
+WITH section_analysis AS (
+    SELECT 
+        c.case_id,
+        c.oa_id,
+        c.section_id,
+        c.token_count,
+        c.word_count,
+        (c.end_utterance_index - c.start_utterance_index + 1) as utterance_count,
+        COUNT(t.id) as text_blocks,
+        -- Calculate duration from utterance timing
+        (MAX(t.end_time_ms) - MIN(t.start_time_ms))::float / 1000.0 / 60.0 as duration_minutes,
+        LENGTH(c.chunk_text) as character_count
+    FROM scotustician.document_chunk_embeddings c
+    LEFT JOIN scotustician.oa_text t 
+        ON c.case_id = t.case_id 
+        AND t.utterance_index BETWEEN c.start_utterance_index AND c.end_utterance_index
+    GROUP BY c.case_id, c.oa_id, c.section_id, c.token_count, c.word_count, 
+             c.start_utterance_index, c.end_utterance_index, c.chunk_text
+)
+SELECT 
+    'Section ' || (section_id + 1) as section_label,
+    ROUND(COALESCE(duration_minutes, 0)::numeric, 1) as duration_min,
+    utterance_count as turns,
+    text_blocks,
+    character_count as est_chars,
+    token_count as est_tokens,
+    CASE 
+        WHEN token_count > 6000 THEN 'LARGE - Consider splitting'
+        WHEN token_count > 4000 THEN 'Large'
+        WHEN token_count < 1500 THEN 'Small'
+        ELSE 'Normal'
+    END as size_assessment
+FROM section_analysis
+WHERE case_id = (
+    -- Get most recent case for monitoring
+    SELECT case_id 
+    FROM scotustician.document_chunk_embeddings 
+    ORDER BY created_at DESC 
+    LIMIT 1
+)
+ORDER BY section_id;
+
+-- Summary statistics across all cases
+SELECT 
+    'OVERALL STATS' as analysis_type,
+    COUNT(DISTINCT case_id) as total_cases,
+    COUNT(*) as total_sections,
+    ROUND(AVG(token_count)::numeric, 0) as avg_tokens_per_section,
+    MIN(token_count) as min_tokens,
+    MAX(token_count) as max_tokens,
+    ROUND(STDDEV(token_count)::numeric, 0) as token_stddev,
+    -- Token distribution analysis
+    COUNT(CASE WHEN token_count < 2000 THEN 1 END) as sections_under_2k,
+    COUNT(CASE WHEN token_count BETWEEN 2000 AND 4000 THEN 1 END) as sections_2k_4k,
+    COUNT(CASE WHEN token_count BETWEEN 4000 AND 6000 THEN 1 END) as sections_4k_6k,
+    COUNT(CASE WHEN token_count > 6000 THEN 1 END) as sections_over_6k
+FROM scotustician.document_chunk_embeddings;
+
+-- Section role classification based on oral argument structure
+WITH section_roles AS (
+    SELECT 
+        case_id,
+        oa_id,
+        section_id,
+        token_count,
+        -- Get first speaker to help identify role
+        (
+            SELECT DISTINCT t.speaker_name 
+            FROM scotustician.oa_text t 
+            WHERE t.case_id = c.case_id 
+              AND t.utterance_index = c.start_utterance_index
+            LIMIT 1
+        ) as first_speaker,
+        -- Count sections per case to determine pattern
+        COUNT(*) OVER (PARTITION BY case_id) as total_sections,
+        -- Classify role based on section_id and total sections
+        CASE 
+            -- Simple 3-section pattern: Petitioner -> Respondent -> Petitioner Rebuttal
+            WHEN COUNT(*) OVER (PARTITION BY case_id) = 3 THEN
+                CASE section_id 
+                    WHEN 0 THEN 'Petitioner Opening'
+                    WHEN 1 THEN 'Respondent'  
+                    WHEN 2 THEN 'Petitioner Rebuttal'
+                END
+            -- 4-section pattern: Petitioner -> Respondent -> Respondent #2 -> Petitioner Rebuttal
+            WHEN COUNT(*) OVER (PARTITION BY case_id) = 4 THEN
+                CASE section_id
+                    WHEN 0 THEN 'Petitioner Opening'
+                    WHEN 1 THEN 'Respondent (Primary)'
+                    WHEN 2 THEN 'Respondent (Secondary)'
+                    WHEN 3 THEN 'Petitioner Rebuttal'
+                END
+            -- 5-section pattern (like Plyler v. Doe): Pet -> Resp #1 -> Resp #2 -> Resp #3 -> Pet Rebuttal
+            WHEN COUNT(*) OVER (PARTITION BY case_id) = 5 THEN
+                CASE section_id
+                    WHEN 0 THEN 'Petitioner Opening'
+                    WHEN 1 THEN 'Respondent #1'
+                    WHEN 2 THEN 'Respondent #2' 
+                    WHEN 3 THEN 'Respondent #3'
+                    WHEN 4 THEN 'Petitioner Rebuttal'
+                END
+            -- 6+ sections: More complex cases with government or amicus participation
+            WHEN COUNT(*) OVER (PARTITION BY case_id) >= 6 THEN
+                CASE 
+                    WHEN section_id = 0 THEN 'Petitioner Opening'
+                    WHEN section_id = (COUNT(*) OVER (PARTITION BY case_id) - 1) THEN 'Petitioner Rebuttal'
+                    ELSE 'Respondent/Amicus #' || section_id
+                END
+            -- 1-2 sections: Unusual cases
+            ELSE 'Section ' || (section_id + 1)
+        END as argument_role,
+        -- Additional context
+        CASE 
+            WHEN section_id = 0 THEN 'Opening'
+            WHEN section_id = (COUNT(*) OVER (PARTITION BY case_id) - 1) AND token_count < 2000 THEN 'Rebuttal'
+            ELSE 'Main Argument'
+        END as argument_phase
+    FROM scotustician.document_chunk_embeddings c
+)
 SELECT 
     case_id,
-    COUNT(DISTINCT section_id) as num_sections,
-    SUM(word_count) as total_words,
-    SUM(token_count) as total_tokens,
-    AVG(token_count) as avg_tokens_per_section,
-    MAX(token_count) as max_section_tokens,
-    MIN(token_count) as min_section_tokens
-FROM scotustician.document_chunk_embeddings
-GROUP BY case_id
-ORDER BY num_sections DESC;
+    oa_id,
+    'Section ' || (section_id + 1) as section_label,
+    argument_role,
+    argument_phase,
+    first_speaker,
+    token_count,
+    total_sections,
+    CASE 
+        WHEN argument_role LIKE '%Rebuttal%' AND token_count > 2500 THEN 'Long rebuttal - unusual'
+        WHEN argument_role LIKE '%Opening%' AND token_count < 2000 THEN 'Short opening - check for issues'  
+        WHEN argument_role LIKE '%Respondent%' AND token_count > 6000 THEN 'Very long argument - consider splitting'
+        ELSE 'Normal'
+    END as assessment
+FROM section_roles
+ORDER BY case_id DESC, section_id;
+
+-- Summary of argument patterns across all cases
+SELECT 
+    total_sections,
+    COUNT(DISTINCT case_id) as case_count,
+    ROUND(AVG(token_count)::numeric, 0) as avg_tokens_per_section,
+    STRING_AGG(DISTINCT 
+        CASE section_id
+            WHEN 0 THEN 'Opening'
+            WHEN total_sections - 1 THEN 'Rebuttal' 
+            ELSE 'Main-' || section_id
+        END, 
+        ' → ' ORDER BY section_id
+    ) as typical_pattern
+FROM (
+    SELECT 
+        case_id,
+        section_id, 
+        token_count,
+        COUNT(*) OVER (PARTITION BY case_id) as total_sections
+    FROM scotustician.document_chunk_embeddings
+) patterns
+GROUP BY total_sections
+ORDER BY case_count DESC;
 
 -- 4. Find similar sections across different cases using vector similarity
 -- (Assuming pgvector extension is installed)

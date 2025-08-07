@@ -48,7 +48,7 @@ Tuned for c5.large instances (2 vCPUs, 4GB RAM):
 - `requirements.txt` - Python dependencies
 
 ### Infrastructure
-- CDK stack configured in `../infrastructure/lib/scotustician-ingest-stack.ts`
+- CDK stack configured in `../../infrastructure/lib/scotustician-ingest-stack.ts`
 
 ## Configuration
 

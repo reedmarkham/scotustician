@@ -37,8 +37,8 @@ export class ScotusticianIngestStack extends Stack {
     const bucket = s3.Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
     const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
-      directory: '../ingest',
-      file: 'Dockerfile',  // Updated to use consolidated Dockerfile
+      directory: '../services/ingest',
+      file: 'Dockerfile',
       buildArgs: {
         BUILD_TIMESTAMP: Date.now().toString()
       },

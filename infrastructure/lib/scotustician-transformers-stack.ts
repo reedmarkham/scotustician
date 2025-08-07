@@ -101,7 +101,7 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     const image = new ecr_assets.DockerImageAsset(this, 'TransformersImage', {
-          directory: '../transformers',
+          directory: '../services/transformers',
           buildArgs: {
             BUILDKIT_INLINE_CACHE: '1',
             BUILD_DATE: new Date().toISOString(),
