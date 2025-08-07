@@ -181,7 +181,7 @@ MODEL_NAME="all-MiniLM-L6-v2" BATCH_SIZE=16 INCREMENTAL=false ./scripts/embeddin
 ```
 
 Environment variables with defaults:
-- `MODEL_NAME`: Qwen/Qwen3-Embedding-0.6B (supports both GPU and CPU)
+- `MODEL_NAME`: baai/bge-m3 (Hugging Face org / model)
 - `MODEL_DIMENSION`: 1024 (configurable from 32 to 1024, max 2000 for pgvector compatibility)
 - `BATCH_SIZE`: 4 (GPU) or 16 (CPU)
 - `MAX_WORKERS`: 2 (GPU) or 4 (CPU)
