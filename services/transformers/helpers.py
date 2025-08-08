@@ -53,20 +53,31 @@ def get_db_connection():
         database=POSTGRES_DB
     )
 
-def ensure_tables_exist(conn):
-    """Ensure database tables exist by running schema.sql."""
-    logger.info("Ensuring Postgres tables exist...")
+def verify_tables_exist(conn):
+    """Verify that required database tables exist."""
+    logger.info("Verifying Postgres tables exist...")
     
-    sql_file_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
-
-    with open(sql_file_path, 'r') as sql_file:
-        sql_content = sql_file.read()
+    required_tables = [
+        'scotustician.oa_text',
+        'scotustician.document_chunk_embeddings'
+    ]
     
     with conn.cursor() as cur:
-        cur.execute(sql_content)
-        conn.commit()
+        for table in required_tables:
+            schema, table_name = table.split('.')
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = %s 
+                    AND table_name = %s
+                );
+            """, (schema, table_name))
+            
+            exists = cur.fetchone()[0]
+            if not exists:
+                raise RuntimeError(f"Required table {table} does not exist. Please ensure database schema is properly set up.")
     
-    logger.info("Tables exist.")
+    logger.info("All required tables verified.")
 
 def truncate_to_tokens(text: str, max_tokens: int = 8000) -> str:
     """Truncate text to specified token limit."""

@@ -4,7 +4,7 @@ from typing import Dict, Any
 from helpers import (
     extract_metadata_from_key,
     get_db_connection,
-    ensure_tables_exist,
+    verify_tables_exist,
     process_transcript_with_chunking,
     insert_document_chunk_embeddings
 )
@@ -25,7 +25,7 @@ def process_single_document(bucket: str, input_key: str, model_name: str, model_
     )
     
     try:
-        ensure_tables_exist(conn)
+        verify_tables_exist(conn)
         
         # Use section-based chunking approach
         chunks = process_transcript_with_chunking(
@@ -43,7 +43,7 @@ def process_transcript_batch(batch: Dict[str, Any]) -> Dict[str, Any]:
     Process a batch of transcripts for Ray Data.
     This function will be called by Ray's map_batches.
     """
-    # Environment configuration
+
     BUCKET = os.getenv("S3_BUCKET", "scotustician")
     MODEL_NAME = os.getenv("MODEL_NAME", "baai/bge-m3")
     MODEL_DIMENSION = int(os.getenv("MODEL_DIMENSION", 1024))
@@ -122,7 +122,6 @@ def batch_process_files():
     fault tolerance, and memory management.
     """
     
-    # Environment configuration
     BUCKET = os.getenv("S3_BUCKET", "scotustician")
     PREFIX = os.getenv("RAW_PREFIX", "raw/oa")
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", 1))
@@ -135,23 +134,19 @@ def batch_process_files():
     logger.info(f"Starting batch job {job_id} (array index: {JOB_START_INDEX})")
     logger.info(f"Configuration: Workers={MAX_WORKERS}, Files per batch={FILES_PER_JOB}")
     
-    # Initialize Ray (if not already initialized)
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
     
-    # Initialize database tables
     with get_db_connection() as conn:
-        ensure_tables_exist(conn)
+        verify_tables_exist(conn)
     
     try:
-        # Read JSON files from S3
         ds = ray.data.read_json(
             f"s3://{BUCKET}/{PREFIX}",
             parallelism=MAX_WORKERS,
             meta_provider=ray.data.datasource.FastFileMetadataProvider()
         )
         
-        # Get total count for job array splitting
         total_files = ds.count()
         logger.info(f"Found {total_files} total files to process")
         
@@ -177,18 +172,15 @@ def batch_process_files():
                 logger.info("All files already processed")
                 return
         
-        # Process transcripts in batches
         results_ds = ds.map_batches(
             process_transcript_batch,
-            batch_size=min(FILES_PER_JOB, 10),  # Process in smaller batches for better parallelism
+            batch_size=min(FILES_PER_JOB, 10),
             num_cpus=MAX_WORKERS,
             batch_format="pandas"
         )
         
-        # Collect results
         results = results_ds.take_all()
         
-        # Aggregate statistics
         all_results = []
         for batch_result in results:
             if 'results' in batch_result:
@@ -197,19 +189,16 @@ def batch_process_files():
         total_processed = sum(1 for r in all_results if r['status'] == 'success')
         total_failed = sum(1 for r in all_results if r['status'] == 'failed')
         
-        # Log summary
         logger.info("Batch job complete.")
         logger.info(f"Summary for job {job_id} (index {JOB_START_INDEX}):")
         logger.info(f"  - Files assigned: {end_idx - start_idx}")
         logger.info(f"  - Successfully processed: {total_processed}")
         logger.info(f"  - Failed: {total_failed}")
-        
-        # Log failures
+
         for result in all_results:
             if result['status'] == 'failed':
                 logger.error(f"Failed file: {result['key']} - {result['error']}")
         
-        # Exit with appropriate code
         if total_failed > 0:
             logger.warning(f"Job completed with {total_failed} failures")
             exit(1)
@@ -221,6 +210,5 @@ def batch_process_files():
         logger.error(f"Fatal error in batch processing: {e}")
         exit(1)
     finally:
-        # Shutdown Ray to free resources
         if ray.is_initialized():
             ray.shutdown()

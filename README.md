@@ -16,7 +16,8 @@ Data Pipeline:
    - Each job uses Ray Data for parallel file processing with automatic fault tolerance  
    - The `baai/bge-m3` model generates 1024-dimensional embeddings using section-based chunking
    - SQS queues track job progress and provide checkpoint management
-3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which has been deployed separately.
+   - Assumes database schema is already configured (deployed via scotustician-db repository)
+3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which must be deployed separately before running transformers.
 
 ## Oral Argument Structure
 
@@ -63,7 +64,7 @@ You will need the ARN, access key, and secret access key for an existing AWS IAM
 
 ### 2. Deploy `scotustician-db`
 
-Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors).
+Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors). The database schema required by the transformers service is created during the scotustician-db deployment.
 
 PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack. The database host and secret name are configured via CDK context parameters.
 
