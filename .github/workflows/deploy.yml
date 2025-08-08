@@ -25,6 +25,7 @@ jobs:
       deploy_shared: ${{ steps.filter.outputs.shared }}
       deploy_ingest: ${{ steps.filter.outputs.ingest }}
       deploy_transformers: ${{ steps.filter.outputs.transformers }}
+      deploy_clustering: ${{ steps.filter.outputs.clustering }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -45,6 +46,11 @@ jobs:
               - 'infrastructure/**'
               - 'services/transformers/*'
               - 'services/transformers/**/*'
+              - '.github/workflows/**'
+            clustering:
+              - 'infrastructure/**'
+              - 'services/case-clustering/*'
+              - 'services/case-clustering/**/*'
               - '.github/workflows/**'
 
   deploy_shared:
@@ -302,4 +308,79 @@ jobs:
         with:
           name: cdk-outputs-transformers
           path: infrastructure/cdk-outputs-transformers.json
+
+  deploy_clustering:
+    needs: [plan, deploy_shared]
+    if: |
+      always() && 
+      needs.plan.outputs.deploy_clustering == 'true' && 
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TOOLKIT_STACK: CDKToolkit-scotustician
+      BOOTSTRAP_QUALIFIER: sctstcn
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - run: cd infrastructure && npm ci
+
+      - name: Check and recover from rollback state
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ScotusticianClusteringStack \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+          
+          echo "Current stack status: $STACK_STATUS"
+          
+          if [[ "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing rollback..."
+            aws cloudformation continue-update-rollback \
+              --stack-name ScotusticianClusteringStack
+            
+            echo "Waiting for rollback to complete..."
+            aws cloudformation wait stack-update-complete \
+              --stack-name ScotusticianClusteringStack || true
+          elif [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]]; then
+            echo "WARNING: Stack in ROLLBACK_COMPLETE state - manual deletion required"
+            echo "To fix: Delete the stack manually and re-run this workflow"
+            exit 1
+          fi
+
+      - name: Download shared outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: cdk-outputs-shared
+          path: infrastructure
+        continue-on-error: true
+
+      - name: Deploy clustering stack
+        run: |
+          cd infrastructure
+          npx cdk deploy ScotusticianClusteringStack \
+            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+            --toolkit-stack-name $TOOLKIT_STACK \
+            --outputs-file cdk-outputs-clustering.json \
+            --require-approval never \
+            --method direct
+
+      - name: Upload clustering outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-outputs-clustering
+          path: infrastructure/cdk-outputs-clustering.json
 

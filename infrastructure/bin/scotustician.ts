@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { ScotusticianSharedStack } from '../lib/scotustician-shared-stack';
 import { ScotusticianIngestStack } from '../lib/scotustician-ingest-stack';
 import { ScotusticianTransformersStack } from '../lib/scotustician-transformers-stack';
+import { ScotusticianClusteringStack } from '../lib/scotustician-clustering-stack';
 
 process.env.CDK_BOOTSTRAP_QUALIFIER = process.env.CDK_BOOTSTRAP_QUALIFIER || 'sctstcn';
 
@@ -26,5 +27,11 @@ new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
   cluster: useGpu && shared.transformersGpuCluster ? shared.transformersGpuCluster : shared.transformersCpuCluster,
   vpc: shared.vpc,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
+  env,
+});
+
+new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
+  cluster: shared.transformersCpuCluster, // Always use CPU cluster for clustering
+  vpc: shared.vpc,
   env,
 });
