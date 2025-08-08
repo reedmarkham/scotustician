@@ -77,14 +77,16 @@ export class ScotusticianTransformersStack extends Stack {
       'PostgreSQL database access'
     );
 
-    // Create Batch compute environment for GPU spot instances
+    // Create Batch compute environment for spot instances (GPU or CPU based on context)
     const spotComputeEnvironment = new batch.ManagedEc2EcsComputeEnvironment(this, 'SpotComputeEnvironment', {
       vpc: props.vpc,
       spot: true,
-      instanceTypes: [ec2.InstanceType.of(ec2.InstanceClass.G4DN, ec2.InstanceSize.XLARGE)],
+      instanceTypes: useGpu 
+        ? [ec2.InstanceType.of(ec2.InstanceClass.G4DN, ec2.InstanceSize.XLARGE)]
+        : [ec2.InstanceType.of(ec2.InstanceClass.C5, ec2.InstanceSize.XLARGE2)],
       minvCpus: 0,
-      maxvCpus: 4, // Single instance constraint (4 vCPUs = 1 g4dn.xlarge)
-      computeEnvironmentName: 'scotustician-spot-gpu',
+      maxvCpus: useGpu ? 4 : 8, // Scale to zero when no jobs, max capacity for workloads
+      computeEnvironmentName: useGpu ? 'scotustician-spot-gpu' : 'scotustician-spot-cpu',
       securityGroups: [batchSecurityGroup],
     });
 
@@ -96,7 +98,7 @@ export class ScotusticianTransformersStack extends Stack {
           order: 1,
         },
       ],
-      jobQueueName: 'scotustician-embedding-queue',
+      jobQueueName: useGpu ? 'scotustician-embedding-gpu-queue' : 'scotustician-embedding-cpu-queue',
       priority: 1,
     });
 
@@ -258,21 +260,21 @@ export class ScotusticianTransformersStack extends Stack {
       description: 'Security group ID for Fargate tasks - allow this in RDS security group',
     });
 
-    // Create Batch job definition for GPU processing
+    // Create Batch job definition for processing (GPU or CPU based on context)
     const batchJobDefinition = new batch.EcsJobDefinition(this, 'EmbeddingJobDefinition', {
-      jobDefinitionName: 'scotustician-embedding-gpu',
+      jobDefinitionName: useGpu ? 'scotustician-embedding-gpu' : 'scotustician-embedding-cpu',
       container: new batch.EcsEc2ContainerDefinition(this, 'EmbeddingJobContainer', {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
-        memory: Size.mebibytes(6144),
+        memory: useGpu ? Size.mebibytes(6144) : Size.mebibytes(8192),
         cpu: 2048,
-        gpu: 1,
+        gpu: useGpu ? 1 : 0,
         environment: {
           S3_BUCKET: 'scotustician',
           RAW_PREFIX: 'raw/oa',
           MODEL_NAME: 'baai/bge-m3',
           MODEL_DIMENSION: '1024',
-          BATCH_SIZE: '4',
-          MAX_WORKERS: '1',
+          BATCH_SIZE: useGpu ? '4' : '16',
+          MAX_WORKERS: useGpu ? '1' : '4',
           INCREMENTAL: 'true',
           PROCESSING_QUEUE_URL: processingQueue.queueUrl,
           CHECKPOINT_QUEUE_URL: checkpointQueue.queueUrl,
