@@ -81,7 +81,12 @@ export class ScotusticianVisualizationStack extends Stack {
       ],
     });
 
-    // Create Launch Template for spot instances
+    // Create instance profile for the role
+    const instanceProfile = new iam.InstanceProfile(this, 'VisualizationInstanceProfile', {
+      role: ecsInstanceRole,
+    });
+
+    // Create Launch Template for spot instances with multiple instance types
     const launchTemplate = new ec2.LaunchTemplate(this, 'VisualizationLaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
@@ -89,31 +94,49 @@ export class ScotusticianVisualizationStack extends Stack {
       userData: ec2.UserData.forLinux(),
       role: ecsInstanceRole,
       spotOptions: {
-        maxPrice: 0.01, // Max spot price per hour
+        maxPrice: 0.05, // Increased spot price to be competitive
         requestType: ec2.SpotRequestType.ONE_TIME,
       },
     });
 
-    // Add ECS cluster configuration to user data
+    // Add comprehensive ECS cluster configuration to user data
     launchTemplate.userData?.addCommands(
-      `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`
+      `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`,
+      'echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config',
+      'systemctl enable ecs --now'
     );
 
     // Add EC2 capacity provider with spot instances using Launch Template
     const asg = new autoscaling.AutoScalingGroup(this, 'VisualizationSpotASG', {
       vpc: props.vpc,
-      launchTemplate: launchTemplate,
+      mixedInstancesPolicy: {
+        launchTemplate: launchTemplate,
+        instancesDistribution: {
+          onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
+          spotAllocationStrategy: autoscaling.SpotAllocationStrategy.LOWEST_PRICE,
+        },
+        launchTemplateOverrides: [
+          { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL) },
+          { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO) },
+          { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3A, ec2.InstanceSize.SMALL) },
+          { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3A, ec2.InstanceSize.MICRO) },
+        ],
+      },
       minCapacity: 0,
       maxCapacity: 2,
       desiredCapacity: 1,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
+        availabilityZones: ['us-east-1a', 'us-east-1c', 'us-east-1d', 'us-east-1f'], // Exclude us-east-1b
       },
       autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
 
     const capacityProvider = new ecs.AsgCapacityProvider(this, 'SpotCapacityProvider', {
       autoScalingGroup: asg,
+      enableManagedScaling: true,
+      enableManagedTerminationProtection: false,
+      canContainersAccessInstanceRole: true,
     });
     cluster.addAsgCapacityProvider(capacityProvider);
 
@@ -229,6 +252,12 @@ export class ScotusticianVisualizationStack extends Stack {
       cluster: cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1, // Single instance for cost savings
+      capacityProviderStrategies: [
+        {
+          capacityProvider: capacityProvider.capacityProviderName,
+          weight: 1,
+        },
+      ],
     });
 
     // Attach service to target group
