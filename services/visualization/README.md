@@ -10,17 +10,20 @@ This service provides a web-based interface for exploring clustering results thr
 
 - **Single Analysis View**: Explore individual clustering analyses with interactive scatter plots showing t-SNE coordinates and cluster assignments
 - **Cluster Representatives**: View representative cases for each cluster along with their 5 most similar cases based on embedding similarity
+- **Enhanced Text Overlays**: Representative case names appear in bold text on scatter plots, with fainter text for nearest neighbors that become bold on hover
 - **Term-by-Term Comparison**: Compare clustering results across multiple Supreme Court terms with side-by-side visualizations
 - **Temporal Trends**: Analyze how clustering patterns evolve over time with trend charts and summary statistics
 - **Interactive Data Tables**: Detailed case information with sortable and filterable columns
 - **S3 Integration**: Direct reading of clustering results from S3 without local storage requirements
+- **Modular Components**: Clean separation of UI components for maintainability
 
 ## Architecture
 
-- **Frontend**: Streamlit web application with Plotly visualizations
-- **Deployment**: AWS Fargate with Application Load Balancer for cost-effective scaling
+- **Frontend**: Streamlit web application with Plotly visualizations and modular component structure
+- **Code Organization**: Separate modules for data loading (`helpers.py`), UI components (`components.py`), and main application (`app.py`)
+- **Deployment**: AWS ECS with EC2 spot instances and Application Load Balancer for cost optimization
 - **Data Source**: S3 bucket containing structured clustering results from the clustering service
-- **Infrastructure**: Optimized for minimal cost using public subnets and single-instance deployment
+- **Infrastructure**: Optimized for minimal cost using spot instances and public subnets
 
 ## Configuration
 

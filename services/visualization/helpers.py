@@ -118,8 +118,9 @@ class ClusteringVisualizer:
     """Generates visualizations for clustering data."""
     
     @staticmethod
-    def create_cluster_scatter_plot(df: pd.DataFrame, cluster_method: str = 'hdbscan_cluster') -> go.Figure:
-        """Create interactive scatter plot of clusters."""
+    def create_cluster_scatter_plot(df: pd.DataFrame, cluster_method: str = 'hdbscan_cluster', 
+                                  cluster_representatives: Optional[Dict] = None) -> go.Figure:
+        """Create interactive scatter plot of clusters with representative case labels."""
         if cluster_method not in df.columns:
             logger.warning(f"Cluster method '{cluster_method}' not found in data")
             return go.Figure()
@@ -148,6 +149,86 @@ class ClusteringVisualizer:
         
         fig.update_traces(marker=dict(size=8, opacity=0.7))
         fig.update_layout(height=600, width=800)
+        
+        # Add text overlays for representative cases and neighbors if provided
+        if cluster_representatives:
+            method_name = cluster_method.replace('_cluster', '')
+            if method_name in cluster_representatives:
+                rep_texts_x, rep_texts_y, rep_texts = [], [], []
+                neighbor_texts_x, neighbor_texts_y, neighbor_texts = [], [], []
+                
+                for cluster_id, cluster_info in cluster_representatives[method_name].items():
+                    # Get representative case
+                    rep_case = cluster_info['representative_case']
+                    rep_docket = rep_case['docket_number']
+                    
+                    # Find representative case in dataframe
+                    rep_row = df[df['docket_number'] == rep_docket]
+                    if not rep_row.empty:
+                        rep_x, rep_y = rep_row['tsne_x'].iloc[0], rep_row['tsne_y'].iloc[0]
+                        case_name = rep_case.get('case_name', rep_docket)
+                        
+                        rep_texts_x.append(rep_x)
+                        rep_texts_y.append(rep_y)
+                        rep_texts.append(case_name)
+                    
+                    # Collect nearest neighbors
+                    neighbors = cluster_info.get('nearest_neighbors', [])
+                    for neighbor in neighbors:
+                        neighbor_docket = neighbor['docket_number']
+                        neighbor_row = df[df['docket_number'] == neighbor_docket]
+                        if not neighbor_row.empty:
+                            neighbor_x, neighbor_y = neighbor_row['tsne_x'].iloc[0], neighbor_row['tsne_y'].iloc[0]
+                            neighbor_name = neighbor.get('case_name', neighbor_docket)
+                            
+                            neighbor_texts_x.append(neighbor_x)
+                            neighbor_texts_y.append(neighbor_y)
+                            neighbor_texts.append(neighbor_name)
+                
+                # Add representative case labels as a separate trace
+                if rep_texts:
+                    fig.add_trace(go.Scatter(
+                        x=rep_texts_x,
+                        y=rep_texts_y,
+                        mode='text',
+                        text=rep_texts,
+                        textfont=dict(size=12, color='black', family="Arial Black"),
+                        textposition='top center',
+                        showlegend=False,
+                        hoverinfo='text',
+                        hovertext=[f"<b>Representative:</b> {text}" for text in rep_texts],
+                        name='Representatives'
+                    ))
+                
+                # Add neighbor case labels as a separate trace with hover effects
+                if neighbor_texts:
+                    fig.add_trace(go.Scatter(
+                        x=neighbor_texts_x,
+                        y=neighbor_texts_y,
+                        mode='text',
+                        text=neighbor_texts,
+                        textfont=dict(size=10, color='gray'),
+                        textposition='top center',
+                        showlegend=False,
+                        hoverinfo='text',
+                        hovertext=[f"<b>Neighbor:</b> {text}" for text in neighbor_texts],
+                        name='Neighbors'
+                    ))
+                
+                # Add custom CSS for hover effects via config
+                fig.update_layout(
+                    annotations=[
+                        dict(
+                            text="<style>.plotly .annotation-text:hover { font-weight: bold !important; color: black !important; }</style>",
+                            showarrow=False,
+                            xref="paper", yref="paper",
+                            x=0, y=1,
+                            xanchor="left", yanchor="top",
+                            font=dict(size=1),
+                            bgcolor="rgba(0,0,0,0)"
+                        )
+                    ]
+                )
         
         return fig
     
