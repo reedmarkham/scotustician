@@ -15,7 +15,9 @@
         "cloudformation:CreateChangeSet",
         "cloudformation:ExecuteChangeSet",
         "cloudformation:DescribeChangeSet",
-        "cloudformation:DeleteChangeSet"
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:ContinueUpdateRollback",
+        "cloudformation:CancelUpdateStack"
       ],
       "Resource": [
         "arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${PROJECT_NAME}*",
