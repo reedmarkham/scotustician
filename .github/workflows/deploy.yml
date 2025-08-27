@@ -1,4 +1,4 @@
-name: Deploy Scotustician Infrastructure (Modular)
+name: Deploy Scotustician Infrastructure and Services
 
 on:
   push:

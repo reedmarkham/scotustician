@@ -240,6 +240,24 @@ jobs:
             fi
           fi
 
+      - name: Create deployment summary
+        if: ${{ contains(inputs.stack_name, 'Visualization') }}
+        run: |
+          URL="${{ steps.get-url.outputs.url }}"
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stack:** ${{ inputs.stack_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$URL" ]; then
+            echo "**Visualization URL:** [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Status:** Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** Deployed but URL not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload outputs
         if: ${{ inputs.outputs_file != '' }}
         uses: actions/upload-artifact@v4

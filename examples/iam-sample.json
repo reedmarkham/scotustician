@@ -17,7 +17,9 @@
         "cloudformation:DescribeChangeSet",
         "cloudformation:DeleteChangeSet",
         "cloudformation:ContinueUpdateRollback",
-        "cloudformation:CancelUpdateStack"
+        "cloudformation:CancelUpdateStack",
+        "cloudformation:DetectStackDrift",
+        "cloudformation:DetectStackResourceDrift"
       ],
       "Resource": [
         "arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${PROJECT_NAME}*",
@@ -29,7 +31,8 @@
       "Effect": "Allow",
       "Action": [
         "cloudformation:ListStacks",
-        "cloudformation:ValidateTemplate"
+        "cloudformation:ValidateTemplate",
+        "cloudformation:DescribeStackDriftDetectionStatus"
       ],
       "Resource": "*"
     },

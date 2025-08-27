@@ -1,6 +1,7 @@
 import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -72,21 +73,37 @@ export class ScotusticianVisualizationStack extends Stack {
       containerInsights: true,
     });
 
-    // Add EC2 capacity provider with spot instances for cost optimization
-    const spotCapacity = cluster.addCapacity('SpotCapacity', {
+    // Create Launch Template for spot instances
+    const launchTemplate = new ec2.LaunchTemplate(this, 'VisualizationLaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
-      spotPrice: '0.01', // Max spot price per hour
-      minCapacity: 0,
-      maxCapacity: 2,
-      desiredCapacity: 1,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
+      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      securityGroup: ecsSecurityGroup,
+      userData: ec2.UserData.forLinux(),
+      spotOptions: {
+        maxPrice: 0.01, // Max spot price per hour
+        requestType: ec2.SpotRequestType.ONE_TIME,
       },
-      autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
 
-    // Add security group to the EC2 instances
-    spotCapacity.addSecurityGroup(ecsSecurityGroup);
+    // Add ECS cluster configuration to user data
+    launchTemplate.userData.addCommands(
+      `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`
+    );
+
+    // Add EC2 capacity provider with spot instances using Launch Template
+    const spotCapacity = cluster.addAsgCapacityProvider('SpotCapacityProvider', {
+      autoScalingGroup: new autoscaling.AutoScalingGroup(this, 'VisualizationSpotASG', {
+        vpc: props.vpc,
+        launchTemplate: launchTemplate,
+        minCapacity: 0,
+        maxCapacity: 2,
+        desiredCapacity: 1,
+        vpcSubnets: {
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+        autoScalingGroupName: 'scotustician-visualization-spot-asg',
+      }),
+    });
 
     // Create task execution role
     const taskExecutionRole = new iam.Role(this, 'VisualizationTaskExecutionRole', {
