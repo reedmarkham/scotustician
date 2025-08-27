@@ -151,14 +151,14 @@ def handler(event, context):
             message = f"""
 Scotustician Pipeline - {stage.title()} Cost Report
 
-Total Cost: ${total_cost}
+Total Cost: ${result['total_cost']}
 Timestamp: {result['timestamp']}
 
 Top Services:
-{chr(10).join([f"  • {s['service']}: ${s['cost']}" for s in result['service_breakdown'][:5]])}
+{chr(10).join([f"  • {service['service']}: ${service['cost']}" for service in result['service_breakdown'][:5]])}
 
 Components:
-{chr(10).join([f"  • {c['component']}: ${c['cost']}" for c in result['component_breakdown']])}
+{chr(10).join([f"  • {component['component']}: ${component['cost']}" for component in result['component_breakdown']])}
 """
             sns_client.publish(
                 TopicArn=topic_arn,
@@ -344,13 +344,13 @@ def verify_embeddings(event):
 
     const runIngestTask = new stepfunctionstasks.EcsRunTask(this, 'RunIngestTask', {
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
-      cluster: cdk.aws_ecs.Cluster.fromClusterArn(this, 'IngestCluster', props.ingestClusterArn),
-      taskDefinition: cdk.aws_ecs.TaskDefinition.fromTaskDefinitionArn(this, 'IngestTaskDefinition', props.ingestTaskDefinitionArn),
+      cluster: ecs.Cluster.fromClusterArn(this, 'IngestCluster', props.ingestClusterArn),
+      taskDefinition: ecs.TaskDefinition.fromTaskDefinitionArn(this, 'IngestTaskDefinition', props.ingestTaskDefinitionArn),
       launchTarget: new stepfunctionstasks.EcsFargateLaunchTarget({
-        platformVersion: cdk.aws_ecs.FargatePlatformVersion.LATEST,
+        platformVersion: ecs.FargatePlatformVersion.LATEST,
       }),
       subnets: {
-        subnetType: cdk.aws_ec2.SubnetType.PUBLIC,
+        subnetType: ec2.SubnetType.PUBLIC,
       },
       resultPath: '$.ingestResult',
     });
@@ -367,8 +367,8 @@ def verify_embeddings(event):
 
     const runEmbeddingsTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunEmbeddingsTask', {
       jobName: 'scotustician-embeddings-stepfunctions',
-      jobQueue: cdk.aws_batch.JobQueue.fromJobQueueArn(this, 'TransformersJobQueue', props.transformersJobQueueArn),
-      jobDefinition: cdk.aws_batch.JobDefinition.fromJobDefinitionArn(this, 'TransformersJobDefinition', props.transformersJobDefinitionArn),
+      jobQueueArn: props.transformersJobQueueArn,
+      jobDefinitionArn: props.transformersJobDefinitionArn,
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
       resultPath: '$.embeddingsResult',
     });
@@ -384,16 +384,18 @@ def verify_embeddings(event):
     // Basic case clustering task
     const runBasicClusteringTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunBasicClusteringTask', {
       jobName: 'scotustician-basic-clustering-stepfunctions',
-      jobQueue: cdk.aws_batch.JobQueue.fromJobQueueArn(this, 'ClusteringJobQueue', props.clusteringJobQueueArn),
-      jobDefinition: cdk.aws_batch.JobDefinition.fromJobDefinitionArn(this, 'ClusteringJobDefinition', props.clusteringJobDefinitionArn),
+      jobQueueArn: props.clusteringJobQueueArn,
+      jobDefinitionArn: props.clusteringJobDefinitionArn,
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
-      parameters: {
-        S3_BUCKET: 'scotustician',
-        OUTPUT_PREFIX: 'analysis/case-clustering',
-        TSNE_PERPLEXITY: '30',
-        MIN_CLUSTER_SIZE: '5',
-        START_TERM: '1980',
-        END_TERM: '2025'
+      containerOverrides: {
+        environment: {
+          S3_BUCKET: 'scotustician',
+          OUTPUT_PREFIX: 'analysis/case-clustering',
+          TSNE_PERPLEXITY: '30',
+          MIN_CLUSTER_SIZE: '5',
+          START_TERM: '1980',
+          END_TERM: '2025'
+        }
       },
       resultPath: '$.basicClusteringResult',
     });
@@ -401,17 +403,19 @@ def verify_embeddings(event):
     // Term-by-term clustering task  
     const runTermByTermClusteringTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunTermByTermClusteringTask', {
       jobName: 'scotustician-term-clustering-stepfunctions',
-      jobQueue: cdk.aws_batch.JobQueue.fromJobQueueArn(this, 'ClusteringJobQueue2', props.clusteringJobQueueArn),
-      jobDefinition: cdk.aws_batch.JobDefinition.fromJobDefinitionArn(this, 'ClusteringJobDefinition2', props.clusteringJobDefinitionArn),
+      jobQueueArn: props.clusteringJobQueueArn,
+      jobDefinitionArn: props.clusteringJobDefinitionArn,
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
-      parameters: {
-        S3_BUCKET: 'scotustician',
-        BASE_OUTPUT_PREFIX: 'analysis/case-clustering-by-term',
-        TSNE_PERPLEXITY: '30',
-        MIN_CLUSTER_SIZE: '5',
-        START_TERM: '1980',
-        END_TERM: '2025',
-        MAX_CONCURRENT_JOBS: '3'
+      containerOverrides: {
+        environment: {
+          S3_BUCKET: 'scotustician',
+          BASE_OUTPUT_PREFIX: 'analysis/case-clustering-by-term',
+          TSNE_PERPLEXITY: '30',
+          MIN_CLUSTER_SIZE: '5',
+          START_TERM: '1980',
+          END_TERM: '2025',
+          MAX_CONCURRENT_JOBS: '3'
+        }
       },
       resultPath: '$.termByTermClusteringResult',
     });
@@ -480,12 +484,10 @@ def verify_embeddings(event):
         )
       );
 
-    // Add error handling
-    const errorHandler = notifyFailureTask.next(new stepfunctions.Fail(this, 'PipelineFailed'));
-    
-    definition.addCatch(errorHandler, {
-      errors: ['States.ALL'],
-      resultPath: '$.error'
+    // Create error handling for the entire workflow
+    const pipelineFailed = new stepfunctions.Fail(this, 'PipelineFailed', {
+      cause: 'Pipeline execution failed',
+      error: 'PIPELINE_ERROR'
     });
 
     // Create the state machine
