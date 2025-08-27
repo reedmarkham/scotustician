@@ -27,7 +27,7 @@ Data Pipeline:
 4. `visualization` provides an interactive Streamlit web application for exploring clustering results:
    - Deployed automatically via GitHub Actions to AWS ECS on spot instances
    - Reads clustering results from S3 and displays interactive plots and case analysis
-   - Access the live deployment via the URL shown in the latest [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
+   - Access the visualization UI via the URL shown in the latest [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 5. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which must be deployed separately before running transformers.
 
 ```
@@ -35,8 +35,7 @@ scotustician/
 ├── services/          	# Application services
 │   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
 │   ├── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
-│   ├── clustering/    	# Python code to perform case-level clustering analysis on embeddings
-│   └── visualization/ 	# Streamlit web app for interactive exploration of clustering results
+│   └── clustering/    	# Python code to perform case-level clustering analysis on embeddings
 ├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
 ```
@@ -111,7 +110,8 @@ scotustician/
 ├── services/          	# Application services
 │   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
 │   ├── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
-│   └── clustering/    	# Python code to perform case-level clustering analysis on embeddings
+│   ├── clustering/    	# Python code to perform case-level clustering analysis on embeddings
+│   └── visualization/ 	# Streamlit web app for interactive exploration of clustering results
 ├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
 ```
