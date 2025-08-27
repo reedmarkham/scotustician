@@ -1,0 +1,248 @@
+name: Deploy CloudFormation Stack
+
+on:
+  workflow_call:
+    inputs:
+      stack_name:
+        required: true
+        type: string
+      context_flags:
+        required: false
+        type: string
+        default: ""
+      outputs_file:
+        required: false
+        type: string
+        default: ""
+      gpu_quota_check:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      AWS_REGION:
+        required: true
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      S3_BUCKET:
+        required: false
+    outputs:
+      deployment_url:
+        description: "Deployment URL if available"
+        value: ${{ jobs.deploy.outputs.url }}
+
+env:
+  TOOLKIT_STACK: CDKToolkit-scotustician
+  BOOTSTRAP_QUALIFIER: sctstcn
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.get-url.outputs.url }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - run: cd infrastructure && npm ci
+
+      - name: Enhanced rollback recovery
+        run: |
+          STACK_NAME="${{ inputs.stack_name }}"
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            STACK_STATUS=$(aws cloudformation describe-stacks \
+              --stack-name $STACK_NAME \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+            
+            echo "Attempt $((RETRY_COUNT + 1)): Current stack status: $STACK_STATUS"
+            
+            case $STACK_STATUS in
+              "UPDATE_ROLLBACK_COMPLETE")
+                echo "Stack ready for deployment after rollback"
+                break
+                ;;
+              "UPDATE_ROLLBACK_IN_PROGRESS")
+                echo "Waiting for rollback to complete..."
+                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME
+                break
+                ;;
+              "UPDATE_IN_PROGRESS")
+                echo "Stack update in progress, waiting..."
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME || true
+                ;;
+              "UPDATE_ROLLBACK_FAILED")
+                echo "Rollback failed, attempting to continue rollback..."
+                aws cloudformation continue-update-rollback --stack-name $STACK_NAME || true
+                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME || true
+                ;;
+              "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS")
+                echo "Cleanup in progress, waiting..."
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                break
+                ;;
+              "ROLLBACK_COMPLETE")
+                echo "ERROR: Stack in ROLLBACK_COMPLETE state"
+                echo "Manual intervention required - delete stack and redeploy"
+                exit 1
+                ;;
+              "CREATE_FAILED"|"DELETE_FAILED")
+                echo "ERROR: Stack in failed state: $STACK_STATUS"
+                exit 1
+                ;;
+              *)
+                echo "Stack ready for deployment (status: $STACK_STATUS)"
+                break
+                ;;
+            esac
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          done
+          
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "ERROR: Max retries reached, stack not ready for deployment"
+            exit 1
+          fi
+
+      - name: Pre-deployment validation
+        run: |
+          cd infrastructure
+          npx cdk synth ${{ inputs.stack_name }} > /dev/null
+          
+          if aws cloudformation describe-stacks --stack-name ${{ inputs.stack_name }} >/dev/null 2>&1; then
+            echo "Checking for stack drift..."
+            DRIFT_ID=$(aws cloudformation detect-stack-drift \
+              --stack-name ${{ inputs.stack_name }} \
+              --query 'StackDriftDetectionId' --output text)
+            
+            sleep 10
+            DRIFT_STATUS=$(aws cloudformation describe-stack-drift-detection-status \
+              --stack-drift-detection-id $DRIFT_ID \
+              --query 'StackDriftStatus' --output text)
+              
+            if [ "$DRIFT_STATUS" = "DRIFTED" ]; then
+              echo "WARNING: Stack has drifted from expected state"
+            else
+              echo "Stack drift check: $DRIFT_STATUS"
+            fi
+          fi
+
+      - name: Check GPU quota
+        if: ${{ inputs.gpu_quota_check }}
+        id: gpu_check
+        run: |
+          echo "gpu_quota=0" >> $GITHUB_OUTPUT
+          output=$(aws service-quotas get-service-quota \
+            --service-code ec2 \
+            --quota-code L-417A2B38 \
+            --query 'Quota.Value' --output text 2>&1) || true
+          if [[ "$output" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "gpu_quota=$output" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy stack with retry
+        run: |
+          cd infrastructure
+          
+          # Handle GPU context if needed
+          CONTEXT_FLAGS="${{ inputs.context_flags }}"
+          if [[ "${{ inputs.gpu_quota_check }}" == "true" ]]; then
+            if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
+              CONTEXT_FLAGS="$CONTEXT_FLAGS --context useGpu=true"
+              echo "Deploying with GPU context"
+            else
+              CONTEXT_FLAGS="$CONTEXT_FLAGS --context useGpu=false"
+              echo "Deploying with CPU fallback context"
+            fi
+          fi
+
+          # Add S3 bucket context for visualization stack
+          if [[ "${{ inputs.stack_name }}" == *"Visualization"* ]]; then
+            CONTEXT_FLAGS="$CONTEXT_FLAGS --context s3BucketName=${{ secrets.S3_BUCKET }}"
+          fi
+
+          MAX_RETRIES=2
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            DEPLOY_CMD="npx cdk deploy ${{ inputs.stack_name }} \
+              --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+              --toolkit-stack-name $TOOLKIT_STACK \
+              $CONTEXT_FLAGS \
+              --require-approval never \
+              --method direct"
+            
+            if [ -n "${{ inputs.outputs_file }}" ]; then
+              DEPLOY_CMD="$DEPLOY_CMD --outputs-file ${{ inputs.outputs_file }}"
+            fi
+            
+            if eval $DEPLOY_CMD; then
+              echo "Deployment successful"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "Deployment failed, retrying in 60 seconds..."
+                sleep 60
+              else
+                echo "All deployment attempts failed"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Get deployment URL
+        id: get-url
+        if: ${{ contains(inputs.stack_name, 'Visualization') }}
+        run: |
+          URL=$(aws cloudformation describe-stacks \
+            --stack-name ${{ inputs.stack_name }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`VisualizationUrl`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Health check service
+        if: ${{ contains(inputs.stack_name, 'Visualization') }}
+        run: |
+          ALB_URL="${{ steps.get-url.outputs.url }}"
+          
+          if [ -n "$ALB_URL" ]; then
+            echo "Checking health of: $ALB_URL"
+            
+            for i in {1..30}; do
+              if curl -f -s "$ALB_URL/_stcore/health" > /dev/null; then
+                echo "Visualization service is healthy"
+                break
+              else
+                echo "Attempt $i: Service not ready yet..."
+                sleep 10
+              fi
+            done
+            
+            if ! curl -f -s "$ALB_URL/_stcore/health" > /dev/null; then
+              echo "WARNING: Service health check failed after 5 minutes"
+            fi
+          fi
+
+      - name: Upload outputs
+        if: ${{ inputs.outputs_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.outputs_file }}
+          path: infrastructure/${{ inputs.outputs_file }}
