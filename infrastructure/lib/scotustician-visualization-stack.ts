@@ -86,24 +86,27 @@ export class ScotusticianVisualizationStack extends Stack {
     });
 
     // Add ECS cluster configuration to user data
-    launchTemplate.userData.addCommands(
+    launchTemplate.userData?.addCommands(
       `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`
     );
 
     // Add EC2 capacity provider with spot instances using Launch Template
-    const spotCapacity = cluster.addAsgCapacityProvider('SpotCapacityProvider', {
-      autoScalingGroup: new autoscaling.AutoScalingGroup(this, 'VisualizationSpotASG', {
-        vpc: props.vpc,
-        launchTemplate: launchTemplate,
-        minCapacity: 0,
-        maxCapacity: 2,
-        desiredCapacity: 1,
-        vpcSubnets: {
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        autoScalingGroupName: 'scotustician-visualization-spot-asg',
-      }),
+    const asg = new autoscaling.AutoScalingGroup(this, 'VisualizationSpotASG', {
+      vpc: props.vpc,
+      launchTemplate: launchTemplate,
+      minCapacity: 0,
+      maxCapacity: 2,
+      desiredCapacity: 1,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+      },
+      autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
+
+    const capacityProvider = new ecs.AsgCapacityProvider(this, 'SpotCapacityProvider', {
+      autoScalingGroup: asg,
+    });
+    cluster.addAsgCapacityProvider(capacityProvider);
 
     // Create task execution role
     const taskExecutionRole = new iam.Role(this, 'VisualizationTaskExecutionRole', {
