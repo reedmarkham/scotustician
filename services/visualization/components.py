@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
-import streamlit as st
-from typing import Dict, List, Optional
+from typing import Dict, Optional
+
 from helpers import ClusteringDataLoader, ClusteringVisualizer, ClusterDataProcessor
 
-def render_sidebar(data_loader: ClusteringDataLoader) -> Dict:
-    """Render sidebar configuration and return selected options."""
+import pandas as pd, streamlit as st
+
+def render_sidebar() -> Dict:
     st.sidebar.header("Configuration")
     
     bucket = st.sidebar.text_input("S3 Bucket", value="scotustician")
     base_prefix = st.sidebar.text_input("Base Prefix", value="analysis/case-clustering")
     
-    # Analysis type selection
     analysis_type = st.sidebar.radio(
         "Analysis Type",
         ["Single Analysis", "Term-by-Term Comparison", "Temporal Trends"]
@@ -23,19 +23,21 @@ def render_sidebar(data_loader: ClusteringDataLoader) -> Dict:
         'analysis_type': analysis_type
     }
 
-def render_single_analysis(data_loader: ClusteringDataLoader, visualizer: ClusteringVisualizer, 
-                         processor: ClusterDataProcessor, bucket: str, base_prefix: str):
-    """Render the single analysis view."""
+def render_single_analysis(
+    data_loader: ClusteringDataLoader, 
+    visualizer: ClusteringVisualizer, 
+    processor: ClusterDataProcessor, 
+    bucket: str, 
+    base_prefix: str):
+
     st.header("Single Analysis View")
     
-    # List available analyses
     analyses = data_loader.list_available_analyses(bucket, base_prefix)
     
     if not analyses:
         st.warning("No clustering analyses found. Please run clustering analysis first.")
         return
     
-    # Analysis selection
     analysis_options = {f"{a['display_name']}": a for a in analyses}
     selected_analysis = st.selectbox(
         "Select Analysis",
@@ -45,7 +47,6 @@ def render_single_analysis(data_loader: ClusteringDataLoader, visualizer: Cluste
     if selected_analysis:
         analysis_info = analysis_options[selected_analysis]
         
-        # Load and display analysis
         with st.spinner("Loading analysis data..."):
             data = data_loader.load_analysis_data(bucket, analysis_info['prefix'])
         
@@ -53,23 +54,18 @@ def render_single_analysis(data_loader: ClusteringDataLoader, visualizer: Cluste
             df = data['data']
             metadata = data['metadata']
             
-            # Display metadata
             if metadata:
                 render_analysis_summary(metadata, df)
             
-            # Cluster visualization
             render_cluster_visualization(visualizer, df, metadata)
             
-            # Cluster Representatives and Neighbors
             if metadata and 'cluster_representatives' in metadata:
                 render_cluster_representatives(processor, metadata, df)
             
-            # Data table
             st.subheader("All Case Data")
             st.dataframe(df, use_container_width=True)
 
-def render_analysis_summary(metadata: Dict, df):
-    """Render analysis summary metrics."""
+def render_analysis_summary(metadata: Dict, df: pd.DataFrame):
     st.subheader("Analysis Summary")
     col1, col2, col3, col4 = st.columns(4)
     
@@ -85,15 +81,18 @@ def render_analysis_summary(metadata: Dict, df):
         st.metric("Avg Tokens/Case", 
                 f"{metadata.get('token_stats', {}).get('avg_tokens_per_case', 0):.0f}")
 
-def render_cluster_visualization(visualizer: ClusteringVisualizer, df, metadata: Optional[Dict]):
-    """Render cluster visualization with text overlays."""
+def render_cluster_visualization(
+    visualizer: ClusteringVisualizer, 
+    df: pd.DataFrame, 
+    metadata: Optional[Dict]
+    ):
+
     st.subheader("Cluster Visualization")
     
     cluster_methods = [col for col in df.columns if col.endswith('_cluster')]
     if cluster_methods:
         selected_method = st.selectbox("Cluster Method", cluster_methods)
         
-        # Pass cluster representatives if available
         cluster_reps = metadata.get('cluster_representatives') if metadata else None
         fig_scatter = visualizer.create_cluster_scatter_plot(df, selected_method, cluster_reps)
         st.plotly_chart(fig_scatter, use_container_width=True)
@@ -109,8 +108,12 @@ def render_cluster_visualization(visualizer: ClusteringVisualizer, df, metadata:
             fig_tokens = visualizer.create_token_distribution_by_cluster(df, selected_method)
             st.plotly_chart(fig_tokens, use_container_width=True)
 
-def render_cluster_representatives(processor: ClusterDataProcessor, metadata: Dict, df):
-    """Render cluster representatives and neighbors section."""
+def render_cluster_representatives(
+    processor: ClusterDataProcessor, 
+    metadata: Dict, 
+    df: pd.DataFrame
+    ):
+
     st.subheader("Cluster Representatives & Similar Cases")
     
     representatives = metadata['cluster_representatives']
@@ -160,9 +163,14 @@ def render_cluster_representatives(processor: ClusterDataProcessor, metadata: Di
                             }
                         )
 
-def render_term_comparison(data_loader: ClusteringDataLoader, visualizer: ClusteringVisualizer, 
-                         processor: ClusterDataProcessor, bucket: str, base_prefix: str):
-    """Render term-by-term comparison view."""
+def render_term_comparison(
+        data_loader: ClusteringDataLoader, 
+        visualizer: ClusteringVisualizer, 
+        processor: ClusterDataProcessor, 
+        bucket: str, 
+        base_prefix: str
+        ):
+
     st.header("Term-by-Term Comparison")
     
     term_prefix = base_prefix.rstrip('/') + '-by-term'
@@ -198,14 +206,11 @@ def render_term_comparison(data_loader: ClusteringDataLoader, visualizer: Cluste
                     term_data[term] = data
         
         if term_data:
-            # Create comparison visualizations
             st.subheader("Term Comparison Summary")
             
-            # Summary metrics
             summary_df = processor.prepare_term_comparison_summary(term_data)
             st.dataframe(summary_df, use_container_width=True)
             
-            # Side-by-side cluster visualizations
             st.subheader("Cluster Visualizations by Term")
             
             cols = st.columns(min(3, len(selected_terms)))
@@ -219,9 +224,14 @@ def render_term_comparison(data_loader: ClusteringDataLoader, visualizer: Cluste
                         fig.update_layout(title=f"Term {term}")
                         st.plotly_chart(fig, use_container_width=True)
 
-def render_temporal_trends(data_loader: ClusteringDataLoader, visualizer: ClusteringVisualizer, 
-                         processor: ClusterDataProcessor, bucket: str, base_prefix: str):
-    """Render temporal trends analysis view."""
+def render_temporal_trends(
+        data_loader: ClusteringDataLoader, 
+        visualizer: ClusteringVisualizer, 
+        processor: ClusterDataProcessor, 
+        bucket: str, 
+        base_prefix: str
+        ):
+    
     st.header("Temporal Trends Analysis")
     
     term_prefix = base_prefix.rstrip('/') + '-by-term'
@@ -244,11 +254,9 @@ def render_temporal_trends(data_loader: ClusteringDataLoader, visualizer: Cluste
                 term_metadata.append(analysis)
     
     if term_metadata:
-        # Create temporal trend chart
         fig_trend = visualizer.create_temporal_trend_chart(term_metadata)
         st.plotly_chart(fig_trend, use_container_width=True)
         
-        # Summary statistics over time
         st.subheader("Temporal Statistics")
         
         trend_df = processor.prepare_temporal_metadata(term_metadata)
