@@ -139,6 +139,17 @@ jobs:
             --require-approval never \
             --method direct
 
+      - name: Wait for shared stack completion
+        run: |
+          echo "Waiting for shared stack to be fully deployed..."
+          aws cloudformation wait stack-update-complete \
+            --stack-name ScotusticianSharedStack \
+            --region $AWS_REGION || \
+          aws cloudformation wait stack-create-complete \
+            --stack-name ScotusticianSharedStack \
+            --region $AWS_REGION
+          echo "Shared stack deployment confirmed complete"
+
       - name: Upload shared outputs
         uses: actions/upload-artifact@v4
         with:
@@ -221,11 +232,12 @@ jobs:
           path: infrastructure/cdk-outputs-ingest.json
 
   deploy_transformers:
-    needs: [plan, deploy_shared]
+    needs: [plan, deploy_shared, deploy_ingest]
     if: |
       always() && 
       needs.plan.outputs.deploy_transformers == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -318,11 +330,12 @@ jobs:
           path: infrastructure/cdk-outputs-transformers.json
 
   deploy_clustering:
-    needs: [plan, deploy_shared]
+    needs: [plan, deploy_shared, deploy_transformers]
     if: |
       always() && 
       needs.plan.outputs.deploy_clustering == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -394,11 +407,12 @@ jobs:
           path: infrastructure/cdk-outputs-clustering.json
 
   deploy_visualization:
-    needs: [plan, deploy_shared]
+    needs: [plan, deploy_shared, deploy_clustering]
     if: |
       always() && 
       needs.plan.outputs.deploy_visualization == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
