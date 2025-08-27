@@ -8,27 +8,65 @@
 
 The embeddings from this pipeline support downstream tasks such as semantic search, clustering, and interactive visualization. I have chosen to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d text embeddings, due to its strong reputation for similar tasks such as semantic retrieval.
 
-Data Pipeline:
-1. `ingest` uses [DLT (data load tool)](https://dlthub.com/) pipeline to collect SCOTUS metadata and case text from Oyez.org API:
-   - Declarative, configuration-driven data extraction with incremental loading
-   - Automatic rate limiting and error handling via DLT framework
-   - Stores raw JSON files and metadata in S3 with built-in state management
-2. `transformers` processes the ingested data using distributed GPU computing:
-   - AWS Batch manages array jobs on spot GPU instances (g4dn.xlarge) for cost efficiency
-   - Each job uses [Ray Data](https://docs.ray.io/en/latest/data/data.html) for parallel file processing with automatic fault tolerance  
-   - The `baai/bge-m3` model generates 1024-dimensional embeddings using section-based chunking
-   - SQS queues track job progress and provide checkpoint management
-   - Built-in idempotency ensures safe re-runs with automatic duplicate detection
-   - Assumes database schema is already configured (deployed via scotustician-db repository)
-3. `clustering` performs case-level clustering analysis on stored embeddings:
-   - Computes weighted average embeddings per case based on section token counts
-   - Applies t-SNE dimensionality reduction and HDBSCAN clustering for pattern discovery
-   - Exports interactive visualizations and analysis results to S3 for evaluation
-4. `visualization` provides an interactive Streamlit web application for exploring clustering results:
-   - Deployed automatically via GitHub Actions to AWS ECS on spot instances
-   - Reads clustering results from S3 and displays interactive plots and case analysis
-   - Access the visualization UI via the URL shown in the latest [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
-5. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which must be deployed separately before running transformers.
+## Pipeline Orchestration
+
+The scotustician pipeline can be executed in two ways:
+
+### Automated Serverless Execution (Recommended)
+
+Use AWS Step Functions for hands-off pipeline orchestration:
+
+```bash
+./run.sh
+```
+
+**Benefits:**
+- **Serverless**: No laptop required - close your computer and let AWS handle everything
+- **Parallel Processing**: Basic and term-by-term clustering run simultaneously
+- **Cost Tracking**: Automated cost reports at pipeline start and completion
+- **Error Recovery**: Automatic retries and SNS notifications for failures
+- **Visual Monitoring**: Real-time progress in AWS Console
+
+The Step Functions workflow orchestrates:
+1. Cost baseline measurement
+2. Data ingestion (ECS Fargate)
+3. Data verification (S3)
+4. Embedding generation (AWS Batch)
+5. Embedding verification (PostgreSQL)
+6. Parallel clustering analysis (AWS Batch)
+   - Basic case clustering
+   - Term-by-term clustering
+7. Final cost report and notifications
+
+### Manual Execution
+
+For granular control, run individual pipeline components using the scripts in [`scripts/README.md`](scripts/README.md).
+
+## Data Pipeline Components
+
+1. **`ingest`** - Collect SCOTUS data from Oyez.org API:
+   - [DLT (data load tool)](https://dlthub.com/) for declarative data extraction
+   - Incremental loading with automatic rate limiting
+   - Stores raw JSON files in S3 with built-in state management
+
+2. **`transformers`** - Generate embeddings using distributed computing:
+   - AWS Batch with spot GPU instances (g4dn.xlarge) for cost efficiency
+   - [Ray Data](https://docs.ray.io/en/latest/data/data.html) for parallel processing with fault tolerance  
+   - `baai/bge-m3` model generates 1024-dimensional embeddings
+   - Section-based chunking preserves oral argument structure
+
+3. **`clustering`** - Analyze embeddings for case similarities:
+   - Weighted average embeddings per case based on section token counts
+   - t-SNE dimensionality reduction and HDBSCAN clustering
+   - Both basic clustering and term-by-term analysis
+   - Interactive visualizations exported to S3
+
+4. **`visualization`** - Streamlit web app for exploring results:
+   - Interactive plots and case analysis
+   - Deployed automatically via GitHub Actions to AWS ECS
+   - Access via URL in [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
+
+5. **Storage** - [PostgreSQL with pgvector extension](https://www.github.com/reedmarkham/scotustician-db) for embeddings (deployed separately)
 
 ```
 scotustician/
@@ -105,66 +143,41 @@ Cases with multiple attorneys or amicus participants may have additional section
 
 Each section represents a natural break when attorneys change at the podium, making section-based embedding generation an intuitive choice for preserving the logical flow of legal arguments. Sections typically range from 1,300-5,500 tokens, optimal for modern embedding models.
 
-```
-scotustician/
-├── services/          	# Application services
-│   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
-│   ├── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
-│   ├── clustering/    	# Python code to perform case-level clustering analysis on embeddings
-│   └── visualization/ 	# Streamlit web app for interactive exploration of clustering results
-├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
-└── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
-```
-
-After tasks complete, the S3 bucket looks like:
-```
-scotustician/
-├── raw/oa/      	  # Raw oral argument JSON files
-├── xml/            # Serialized XML for the oral argument transcripts
-├── junk/      		  # Raw oral argument JSON files *if* missing key data, malformed, etc.
-├── logs/       	  # JSON representations of pipeline metrics, later to be queried in Athena, etc.
-```
----
 ## Prerequisites
 
 ### 1. AWS IAM Credentials
 
 You will need the ARN, access key, and secret access key for an existing AWS IAM user with permissions defined in [`iam-sample.json`](iam-sample.json). This user is used to authenticate CDK deployments via GitHub Actions.
 
-> To-do: define and manage this IAM user in a separate CDK repository.
-
 ### 2. Deploy `scotustician-db`
 
 Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors). The database schema required by the transformers service is created during the scotustician-db deployment.
 
-PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack. The database host and secret name are configured via CDK context parameters.
+PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack.
 
 ### 3. (Optional) Request GPU Instance Quota
 
-If you want to use GPU acceleration for the transformer tasks, request a service quota increase:
+If you want to use GPU acceleration for transformer tasks, request a service quota increase:
 
 1. Navigate to [AWS Service Quotas](https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas)
 2. Search for **"Running On-Demand G and VT instances"**
-3. Click on the quota and select **"Request quota increase"**
-4. Request at least 1-2 instances (g4dn.xlarge uses 4 vCPUs)
-5. Wait for approval (typically a few hours for small increases)
+3. Request at least 1-2 instances (g4dn.xlarge uses 4 vCPUs)
+4. Wait for approval (typically a few hours for small increases)
 
-> **Note**: The pipeline will automatically fall back to CPU if GPU quota is not available. This step is only required if you want to enable GPU acceleration.
+The pipeline will automatically fall back to CPU if GPU quota is not available.
 
 ### 4. Set GitHub Repository Secrets
 
-Configure the following repository secrets in **GitHub > Settings > Secrets and variables > Actions > Repository secrets**:
+Configure these repository secrets in **GitHub > Settings > Secrets and variables > Actions > Repository secrets**:
 
-| Secret Name         | Description                                       | Example Value                                      |
-|---------------------|---------------------------------------------------|----------------------------------------------------|
-| `AWS_ACCOUNT_ID`    | AWS account ID                                    | `123456789012`                                     |
-| `AWS_REGION`        | AWS region                                        | `us-east-1`                                        |
-| `AWS_IAM_ARN`       | IAM user's ARN                                    | `arn:aws:iam::123456789012:user/github-actions`    |
-| `AWS_ACCESS_KEY_ID` | IAM user's access key                             | `AKIAIOSFODNN7EXAMPLE`                             |
-| `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
-| `S3_BUCKET`         | S3 bucket name (optional, defaults to scotustician) | `scotustician`                                   |
-
----
+| Secret Name         | Description                     | Example Value                                      |
+|---------------------|----------------------------------|----------------------------------------------------|
+| `AWS_ACCOUNT_ID`    | AWS account ID                  | `123456789012`                                     |
+| `AWS_REGION`        | AWS region                      | `us-east-1`                                        |
+| `AWS_IAM_ARN`       | IAM user's ARN                  | `arn:aws:iam::123456789012:user/github-actions`    |
+| `AWS_ACCESS_KEY_ID` | IAM user's access key           | `AKIAIOSFODNN7EXAMPLE`                             |
+| `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
+| `S3_BUCKET`         | S3 bucket name (optional)       | `scotustician`                                     |
 
 ## Bootstrap the CDK Environment
 
@@ -211,9 +224,20 @@ For detailed instructions on running data ingestion and transformation tasks, se
 
 
 ---
+## Infrastructure
+
+The project deploys six AWS CDK stacks via GitHub Actions:
+
+1. **ScotusticianSharedStack** - VPC, ECS clusters, and networking
+2. **ScotusticianIngestStack** - ECS task definition for data ingestion
+3. **ScotusticianTransformersStack** - AWS Batch for embedding generation
+4. **ScotusticianClusteringStack** - AWS Batch for clustering analysis
+5. **ScotusticianVisualizationStack** - ECS service for Streamlit web app
+6. **ScotusticianOrchestrationStack** - Step Functions workflow with Lambda functions for cost tracking and data verification
+
 ## CI/CD
 
-On commits or pull requests to `main` the GitHub Actions workflow (`.github/workflows/deploy.yml`) detects pertinent diffs, builds respective Docker images, and deploys via `cdk`.
+On commits to `main`, GitHub Actions (`.github/workflows/deploy.yml`) detects changes and deploys the affected stacks automatically.
 
 ---
 ## Appendix

@@ -19,6 +19,7 @@ jobs:
       deploy_transformers: ${{ steps.filter.outputs.transformers }}
       deploy_clustering: ${{ steps.filter.outputs.clustering }}
       deploy_visualization: ${{ steps.filter.outputs.visualization }}
+      deploy_orchestration: ${{ steps.filter.outputs.orchestration }}
     steps:
       - uses: actions/checkout@v3
 
@@ -44,6 +45,9 @@ jobs:
             visualization:
               - 'infrastructure/**'
               - 'services/visualization/**'
+              - '.github/workflows/**'
+            orchestration:
+              - 'infrastructure/**'
               - '.github/workflows/**'
 
   deploy_shared:
@@ -123,3 +127,21 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
+  deploy_orchestration:
+    needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering]
+    if: |
+      always() && 
+      needs.plan.outputs.deploy_orchestration == 'true' && 
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped') &&
+      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped') &&
+      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack_name: "ScotusticianOrchestrationStack"
+      outputs_file: "cdk-outputs-orchestration.json"
+    secrets:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

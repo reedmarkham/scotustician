@@ -17,6 +17,9 @@ export interface ScotusticianTransformersStackProps extends StackProps {
 }
 
 export class ScotusticianTransformersStack extends Stack {
+  public readonly jobQueueArn: string;
+  public readonly jobDefinitionArn: string;
+
   constructor(scope: Construct, id: string, props: ScotusticianTransformersStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
     const useGpu = scope.node.tryGetContext('useGpu') === 'true';
@@ -292,6 +295,10 @@ export class ScotusticianTransformersStack extends Stack {
       }),
       retryAttempts: 2, // AWS Batch retry limit as requested
     });
+
+    // Assign to class properties for orchestration stack
+    this.jobQueueArn = jobQueue.jobQueueArn;
+    this.jobDefinitionArn = batchJobDefinition.jobDefinitionArn;
 
     // Output Batch resources
     new CfnOutput(this, 'BatchJobQueueArn', {

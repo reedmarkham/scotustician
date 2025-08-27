@@ -86,17 +86,14 @@ export class ScotusticianVisualizationStack extends Stack {
       role: ecsInstanceRole,
     });
 
-    // Create Launch Template for spot instances with multiple instance types
+    // Create Launch Template for use with Mixed Instances Policy
+    // Note: spotOptions removed because they conflict with mixedInstancesPolicy
     const launchTemplate = new ec2.LaunchTemplate(this, 'VisualizationLaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
       securityGroup: ecsSecurityGroup,
       userData: ec2.UserData.forLinux(),
       role: ecsInstanceRole,
-      spotOptions: {
-        maxPrice: 0.05, // Increased spot price to be competitive
-        requestType: ec2.SpotRequestType.ONE_TIME,
-      },
     });
 
     // Add comprehensive ECS cluster configuration to user data
@@ -106,7 +103,7 @@ export class ScotusticianVisualizationStack extends Stack {
       'systemctl enable ecs --now'
     );
 
-    // Add EC2 capacity provider with spot instances using Launch Template
+    // Add EC2 capacity provider with spot instances using Mixed Instances Policy
     const asg = new autoscaling.AutoScalingGroup(this, 'VisualizationSpotASG', {
       vpc: props.vpc,
       mixedInstancesPolicy: {
@@ -114,6 +111,7 @@ export class ScotusticianVisualizationStack extends Stack {
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.LOWEST_PRICE,
+          spotMaxPrice: '$0.05', // Maximum spot price per hour
         },
         launchTemplateOverrides: [
           { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL) },

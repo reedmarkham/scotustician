@@ -14,6 +14,9 @@ export interface ScotusticianClusteringStackProps extends StackProps {
 }
 
 export class ScotusticianClusteringStack extends Stack {
+  public readonly jobQueueArn: string;
+  public readonly jobDefinitionArn: string;
+
   constructor(scope: Construct, id: string, props: ScotusticianClusteringStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
 
@@ -165,6 +168,10 @@ export class ScotusticianClusteringStack extends Stack {
       value: clusteringTaskDefinition.taskDefinitionArn,
       description: 'ARN of the ECS task definition for case clustering',
     });
+
+    // Assign to class properties for orchestration stack
+    this.jobQueueArn = clusteringJobQueue.jobQueueArn;
+    this.jobDefinitionArn = clusteringJobDefinition.jobDefinitionArn;
 
     new CfnOutput(this, 'ClusteringContainerName', {
       value: clusteringContainer.containerName,

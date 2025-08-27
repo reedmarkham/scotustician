@@ -15,7 +15,6 @@ The `scripts/` directory contains the following utilities:
 | File | Usage |
 |--------|---------|
 | `bootstrap.sh` | Gets account ID and region from AWS CLI to run the CDK bootstrap command with the custom qualifier for consistent deployments |
-| `chunking.sql` | SQL queries for downstream processing of document chunk embeddings with various chunking strategies and semantic search examples |
 | `embeddings.sh` | Submits AWS Batch array jobs for distributed embedding generation using [Ray Data](https://docs.ray.io/en/latest/data/data.html) with GPU spot instances |
 | `ingest.sh` | Runs ECS Fargate tasks to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
 
@@ -95,16 +94,6 @@ aws logs tail /aws/batch/job --follow --region us-east-1
 aws sqs get-queue-attributes --queue-url <PROCESSING_QUEUE_URL> --attribute-names All
 ```
 
-## SQL Utilities
-
-The `chunking.sql` file provides example queries for downstream processing of utterance embeddings:
-
-- **Fixed-size token windows**: Chunk transcripts into overlapping token windows (e.g., 512 tokens with 128 overlap)
-- **Speaker-based chunking**: Group consecutive utterances by the same speaker
-- **Time-based chunking**: Create temporal windows if timestamps are available
-- **Custom chunking**: Extract embeddings with metadata for algorithmic processing
-
-These queries are useful for building semantic search, clustering, and other downstream applications that require different granularities of text representation.
 
 ## Monitoring Task Execution
 

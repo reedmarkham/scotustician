@@ -4,6 +4,7 @@ import { ScotusticianIngestStack } from '../lib/scotustician-ingest-stack';
 import { ScotusticianTransformersStack } from '../lib/scotustician-transformers-stack';
 import { ScotusticianClusteringStack } from '../lib/scotustician-clustering-stack';
 import { ScotusticianVisualizationStack } from '../lib/scotustician-visualization-stack';
+import { ScotusticianOrchestrationStack } from '../lib/scotustician-orchestration-stack';
 
 process.env.CDK_BOOTSTRAP_QUALIFIER = process.env.CDK_BOOTSTRAP_QUALIFIER || 'sctstcn';
 
@@ -24,14 +25,14 @@ const ingest = new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
 
 const useGpu = app.node.tryGetContext('useGpu') === 'true';
 
-new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
+const transformers = new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
   cluster: useGpu && shared.transformersGpuCluster ? shared.transformersGpuCluster : shared.transformersCpuCluster,
   vpc: shared.vpc,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
   env,
 });
 
-new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
+const clustering = new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
   cluster: shared.transformersCpuCluster, // Always use CPU cluster for clustering
   vpc: shared.vpc,
   env,
@@ -39,5 +40,19 @@ new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
 
 new ScotusticianVisualizationStack(app, 'ScotusticianVisualizationStack', {
   vpc: shared.vpc,
+  env,
+});
+
+// Orchestration stack that depends on all other stacks
+new ScotusticianOrchestrationStack(app, 'ScotusticianOrchestrationStack', {
+  ingestClusterArn: shared.ingestCluster.clusterArn,
+  ingestTaskDefinitionArn: ingest.taskDefinitionArn,
+  transformersJobQueueArn: transformers.jobQueueArn,
+  transformersJobDefinitionArn: transformers.jobDefinitionArn,
+  clusteringJobQueueArn: clustering.jobQueueArn,
+  clusteringJobDefinitionArn: clustering.jobDefinitionArn,
+  vpcId: shared.vpc.vpcId,
+  publicSubnetIds: shared.vpc.publicSubnets.map(subnet => subnet.subnetId),
+  privateSubnetIds: shared.vpc.isolatedSubnets.map(subnet => subnet.subnetId),
   env,
 });
