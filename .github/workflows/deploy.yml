@@ -1,4 +1,4 @@
-name: Deploy Scotustician Infrastructure and Services
+name: Deploy scotustician infrastructure and services
 
 on:
   push:

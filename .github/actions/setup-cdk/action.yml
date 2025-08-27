@@ -1,4 +1,4 @@
-name: 'Setup CDK Environment'
+name: 'Initialize CDK environment'
 description: 'Sets up Node.js, installs dependencies, and configures AWS credentials'
 
 inputs:

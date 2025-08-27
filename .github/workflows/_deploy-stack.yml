@@ -1,4 +1,4 @@
-name: Deploy CloudFormation Stack
+name: Deploy CloudFormation stack
 
 on:
   workflow_call:

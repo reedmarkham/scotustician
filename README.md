@@ -1,6 +1,6 @@
 # scotustician
 
-[![Deploy Scotustician Infrastructure and Services)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml/badge.svg)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
+[![Deploy scotustician infrastructure and services)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml/badge.svg)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 
 **scotustician** is a collection of services used to apply data science - particularly visualizing the results of unsupervised clustering over large text embeddings - to Supreme Court of the United States oral argument (OA) transcripts using AWS infrastructure and GitHub Actions to handle CI/CD across the various services: data ingestion, embedding computation, clustering processing, and visualization UI. The motivation for this approach is to better understand the Court by measuring and showing the semantic distance among all available cases' respective oral argument sessions. This repository also includes AWS CDK stacks to provision the underlying infrastructure for all services involved.
 
