@@ -177,7 +177,7 @@ export class ScotusticianVisualizationStack extends Stack {
       vpc: props.vpc,
       port: containerPort,
       protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
+      targetType: elbv2.TargetType.INSTANCE,
       healthCheck: {
         path: '/',
         healthyHttpCodes: '200',
