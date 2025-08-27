@@ -53,8 +53,8 @@ export class ScotusticianClusteringStack extends Stack {
     );
 
     // Case Clustering Docker Image
-    const clusteringImage = new ecr_assets.DockerImageAsset(this, 'CaseClusteringImage', {
-      directory: '../services/case-clustering',
+    const clusteringImage = new ecr_assets.DockerImageAsset(this, 'ClusteringImage', {
+      directory: '../services/clustering',
       buildArgs: {
         BUILDKIT_INLINE_CACHE: '1',
         BUILD_DATE: new Date().toISOString(),
@@ -62,17 +62,17 @@ export class ScotusticianClusteringStack extends Stack {
     });
 
     // ECS Task Definition for manual runs
-    const clusteringTaskDefinition = new ecs.FargateTaskDefinition(this, 'CaseClusteringTaskDef', {
+    const clusteringTaskDefinition = new ecs.FargateTaskDefinition(this, 'ClusteringTaskDef', {
       cpu: 2048, // 2 vCPU for numerical computations
       memoryLimitMiB: 8192, // 8 GB for scikit-learn and large datasets
     });
 
-    const clusteringContainer = clusteringTaskDefinition.addContainer('CaseClusteringContainer', {
+    const clusteringContainer = clusteringTaskDefinition.addContainer('ClusteringContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(clusteringImage),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'case-clustering' }),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'clustering' }),
       environment: {
         S3_BUCKET: 'scotustician',
-        OUTPUT_PREFIX: 'analysis/case-clustering',
+        OUTPUT_PREFIX: 'analysis/clustering',
         TSNE_PERPLEXITY: '30',
         N_CLUSTERS: '8',
         MIN_CLUSTER_SIZE: '5',
@@ -127,15 +127,15 @@ export class ScotusticianClusteringStack extends Stack {
     });
 
     // Create Batch job definition for case clustering
-    const clusteringJobDefinition = new batch.EcsJobDefinition(this, 'CaseClusteringJobDefinition', {
-      jobDefinitionName: 'scotustician-case-clustering',
-      container: new batch.EcsEc2ContainerDefinition(this, 'CaseClusteringJobContainer', {
+    const clusteringJobDefinition = new batch.EcsJobDefinition(this, 'ClusteringJobDefinition', {
+      jobDefinitionName: 'scotustician-clustering',
+      container: new batch.EcsEc2ContainerDefinition(this, 'ClusteringJobContainer', {
         image: ecs.ContainerImage.fromDockerImageAsset(clusteringImage),
         memory: Size.mebibytes(8192),
         cpu: 2048,
         environment: {
           S3_BUCKET: 'scotustician',
-          OUTPUT_PREFIX: 'analysis/case-clustering',
+          OUTPUT_PREFIX: 'analysis/clustering',
           TSNE_PERPLEXITY: '30',
           N_CLUSTERS: '8',
           MIN_CLUSTER_SIZE: '5',
@@ -148,7 +148,7 @@ export class ScotusticianClusteringStack extends Stack {
           POSTGRES_DB: ecs.Secret.fromSecretsManager(postgresSecret, 'dbname'),
         },
         jobRole: clusteringTaskDefinition.taskRole,
-        logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'batch-case-clustering' }),
+        logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'batch-clustering' }),
       }),
       retryAttempts: 1, // No retries needed for analysis jobs
     });

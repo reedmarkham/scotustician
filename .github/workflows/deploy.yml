@@ -49,8 +49,8 @@ jobs:
               - '.github/workflows/**'
             clustering:
               - 'infrastructure/**'
-              - 'services/case-clustering/*'
-              - 'services/case-clustering/**/*'
+              - 'services/clustering/*'
+              - 'services/clustering/**/*'
               - '.github/workflows/**'
 
   deploy_shared:
