@@ -72,6 +72,19 @@ export class ScotusticianVisualizationStack extends Stack {
       containerInsights: true,
     });
 
+    // Add EC2 capacity provider with spot instances for cost optimization
+    cluster.addCapacity('SpotCapacity', {
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
+      spotPrice: '0.01', // Max spot price per hour
+      minCapacity: 0,
+      maxCapacity: 2,
+      desiredCapacity: 1,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+      },
+      autoScalingGroupName: 'scotustician-visualization-spot-asg',
+    });
+
     // Create task execution role
     const taskExecutionRole = new iam.Role(this, 'VisualizationTaskExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
@@ -110,10 +123,9 @@ export class ScotusticianVisualizationStack extends Stack {
       directory: path.join(__dirname, '../../services/visualization'),
     });
 
-    // Create Fargate task definition
-    const taskDefinition = new ecs.FargateTaskDefinition(this, 'VisualizationTaskDefinition', {
-      memoryLimitMiB: memoryLimitMiB,
-      cpu: cpu,
+    // Create EC2 task definition for spot instances
+    const taskDefinition = new ecs.Ec2TaskDefinition(this, 'VisualizationTaskDefinition', {
+      networkMode: ecs.NetworkMode.BRIDGE,
       executionRole: taskExecutionRole,
       taskRole: taskRole,
     });
@@ -121,6 +133,8 @@ export class ScotusticianVisualizationStack extends Stack {
     // Add container to task definition
     const container = taskDefinition.addContainer('visualization', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
+      memoryLimitMiB: memoryLimitMiB,
+      cpu: cpu,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'ecs',
         logGroup: logGroup,
@@ -132,6 +146,7 @@ export class ScotusticianVisualizationStack extends Stack {
       portMappings: [
         {
           containerPort: containerPort,
+          hostPort: 0, // Dynamic port mapping for EC2
           protocol: ecs.Protocol.TCP,
         },
       ],
@@ -177,17 +192,12 @@ export class ScotusticianVisualizationStack extends Stack {
       defaultTargetGroups: [targetGroup],
     });
 
-    // Create Fargate service
-    this.ecsService = new ecs.FargateService(this, 'VisualizationService', {
+    // Create EC2 service on spot instances
+    this.ecsService = new ecs.Ec2Service(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1, // Single instance for cost savings
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC, // Use public subnets to avoid NAT gateway costs
-      },
       securityGroups: [ecsSecurityGroup],
-      assignPublicIp: true,
-      platformVersion: ecs.FargatePlatformVersion.LATEST,
     });
 
     // Attach service to target group
