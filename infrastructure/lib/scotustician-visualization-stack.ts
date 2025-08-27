@@ -73,7 +73,7 @@ export class ScotusticianVisualizationStack extends Stack {
     });
 
     // Add EC2 capacity provider with spot instances for cost optimization
-    cluster.addCapacity('SpotCapacity', {
+    const spotCapacity = cluster.addCapacity('SpotCapacity', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
       spotPrice: '0.01', // Max spot price per hour
       minCapacity: 0,
@@ -82,9 +82,11 @@ export class ScotusticianVisualizationStack extends Stack {
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
       },
-      securityGroups: [ecsSecurityGroup],
       autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
+
+    // Add security group to the EC2 instances
+    spotCapacity.addSecurityGroup(ecsSecurityGroup);
 
     // Create task execution role
     const taskExecutionRole = new iam.Role(this, 'VisualizationTaskExecutionRole', {
