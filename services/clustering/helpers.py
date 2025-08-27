@@ -9,7 +9,7 @@ from typing import List, Dict, Any
 import psycopg2, pandas as pd, numpy as np, plotly.express as px, plotly.graph_objects as go
 from plotly.offline import plot
 from sklearn.manifold import TSNE
-from sklearn.cluster import KMeans, HDBSCAN
+from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 
@@ -107,24 +107,13 @@ def compute_tsne(embeddings: np.ndarray, perplexity: int, random_state: int) -> 
     return coords
 
 def compute_clusters(embeddings: np.ndarray, n_clusters: int, min_cluster_size: int, random_state: int) -> Dict[str, np.ndarray]:
-    """Compute different clustering algorithms."""
+    """Compute HDBSCAN clustering algorithm."""
     logger.info("Computing clusters...")
     
     scaler = StandardScaler()
     embeddings_scaled = scaler.fit_transform(embeddings)
     
     results = {}
-    
-    # K-means clustering
-    n_clusters = min(n_clusters, embeddings.shape[0] // 2)
-    if n_clusters >= 2:
-        kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
-        kmeans_labels = kmeans.fit_predict(embeddings_scaled)
-        results['kmeans'] = kmeans_labels
-        
-        if len(np.unique(kmeans_labels)) > 1:
-            silhouette = silhouette_score(embeddings_scaled, kmeans_labels)
-            logger.info(f"K-means silhouette score: {silhouette:.3f}")
     
     # HDBSCAN clustering
     min_cluster_size = min(min_cluster_size, max(2, embeddings.shape[0] // 10))
@@ -144,7 +133,7 @@ def create_visualizations(df: pd.DataFrame, timestamp: str, representatives: Dic
     viz_files = []
     
     # t-SNE scatter plot colored by clusters
-    for cluster_method in ['kmeans_cluster', 'hdbscan_cluster']:
+    for cluster_method in ['hdbscan_cluster']:
         if cluster_method in df.columns:
             fig = px.scatter(
                 df,
@@ -196,13 +185,13 @@ def create_visualizations(df: pd.DataFrame, timestamp: str, representatives: Dic
             viz_files.append(viz_file)
     
     # Token distribution by cluster
-    if 'kmeans_cluster' in df.columns:
+    if 'hdbscan_cluster' in df.columns:
         fig = px.box(
             df,
-            x='kmeans_cluster',
+            x='hdbscan_cluster',
             y='total_tokens',
-            title="Token Distribution by K-means Cluster",
-            labels={'kmeans_cluster': 'Cluster', 'total_tokens': 'Total Tokens'}
+            title="Token Distribution by HDBSCAN Cluster",
+            labels={'hdbscan_cluster': 'Cluster', 'total_tokens': 'Total Tokens'}
         )
         fig.update_layout(height=400, width=800)
         
@@ -219,7 +208,7 @@ def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
     
     representatives = {}
     
-    for cluster_method in ['kmeans_cluster', 'hdbscan_cluster']:
+    for cluster_method in ['hdbscan_cluster']:
         if cluster_method not in df.columns:
             continue
             
@@ -228,8 +217,7 @@ def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
         
         # Get unique clusters (excluding noise cluster -1 for HDBSCAN)
         clusters = df[cluster_method].unique()
-        if method_name == 'hdbscan':
-            clusters = clusters[clusters != -1]  # Remove noise cluster
+        clusters = clusters[clusters != -1]  # Remove noise cluster
         
         for cluster_id in clusters:
             cluster_data = df[df[cluster_method] == cluster_id]
@@ -295,7 +283,6 @@ def export_results(df: pd.DataFrame, viz_files: List[str], s3_client, bucket: st
         'total_cases': len(df),
         'parameters': analysis_params,
         'cluster_summary': {
-            'kmeans_clusters': int(df['kmeans_cluster'].nunique()) if 'kmeans_cluster' in df.columns else 0,
             'hdbscan_clusters': int(len(set(df['hdbscan_cluster'])) - (1 if -1 in df['hdbscan_cluster'].values else 0)) if 'hdbscan_cluster' in df.columns else 0
         },
         'token_stats': {

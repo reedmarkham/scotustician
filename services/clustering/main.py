@@ -99,7 +99,6 @@ class CaseClusteringAnalysis:
                     'total_cases': len(df),
                     'total_tokens': int(df['total_tokens'].sum()),
                     'avg_sections_per_case': float(df['section_count'].mean()),
-                    'kmeans_clusters': int(df['kmeans_cluster'].nunique()) if 'kmeans_cluster' in df.columns else 0,
                     'hdbscan_clusters': int(len(set(df['hdbscan_cluster'])) - (1 if -1 in df['hdbscan_cluster'].values else 0)) if 'hdbscan_cluster' in df.columns else 0
                 }
             }
