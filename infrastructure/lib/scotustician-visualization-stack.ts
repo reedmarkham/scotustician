@@ -73,12 +73,21 @@ export class ScotusticianVisualizationStack extends Stack {
       containerInsights: true,
     });
 
+    // Create instance role for ECS instances
+    const ecsInstanceRole = new iam.Role(this, 'VisualizationEcsInstanceRole', {
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
+      ],
+    });
+
     // Create Launch Template for spot instances
     const launchTemplate = new ec2.LaunchTemplate(this, 'VisualizationLaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
       securityGroup: ecsSecurityGroup,
       userData: ec2.UserData.forLinux(),
+      role: ecsInstanceRole,
       spotOptions: {
         maxPrice: 0.01, // Max spot price per hour
         requestType: ec2.SpotRequestType.ONE_TIME,
