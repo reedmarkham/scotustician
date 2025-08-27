@@ -14,13 +14,13 @@ class ClusteringDataLoader:
     """Handles loads from S3 and caching for Streamlit best practice."""
     
     def __init__(self):
-        _self.s3_client = boto3.client('s3')
+        self.s3_client = boto3.client('s3')
         
     @st.cache_data(ttl=300)  # Cache for 5 minutes
-    def list_available_analyses(_self, bucket: str, prefix: str) -> List[Dict]:
+    def list_available_analyses(self, bucket: str, prefix: str) -> List[Dict]:
         """List available clustering analyses from S3."""
         try:
-            response = __self.s3_client.list_objects_v2(
+            response = self.s3_client.list_objects_v2(
                 Bucket=bucket,
                 Prefix=prefix,
                 Delimiter='/'
@@ -43,7 +43,7 @@ class ClusteringDataLoader:
                         # Check if it's a date-based analysis
                         try:
                             # Look for metadata to determine analysis type
-                            metadata_objects = __self.s3_client.list_objects_v2(
+                            metadata_objects = self.s3_client.list_objects_v2(
                                 Bucket=bucket,
                                 Prefix=analysis_prefix,
                                 MaxKeys=10
@@ -71,11 +71,11 @@ class ClusteringDataLoader:
             return []
     
     @st.cache_data(ttl=600)  # Cache for 10 minutes
-    def load_analysis_data(_self, bucket: str, prefix: str) -> Optional[Dict]:
+    def load_analysis_data(self, bucket: str, prefix: str) -> Optional[Dict]:
         """Load clustering analysis data from S3."""
         try:
             # Find the CSV results file and metadata
-            response = _self.s3_client.list_objects_v2(
+            response = self.s3_client.list_objects_v2(
                 Bucket=bucket,
                 Prefix=prefix
             )
@@ -94,13 +94,13 @@ class ClusteringDataLoader:
                 return None
             
             # Load CSV data
-            csv_obj = _self.s3_client.get_object(Bucket=bucket, Key=csv_key)
+            csv_obj = self.s3_client.get_object(Bucket=bucket, Key=csv_key)
             df = pd.read_csv(StringIO(csv_obj['Body'].read().decode('utf-8')))
             
             # Load metadata if available
             metadata = {}
             if metadata_key:
-                metadata_obj = _self.s3_client.get_object(Bucket=bucket, Key=metadata_key)
+                metadata_obj = self.s3_client.get_object(Bucket=bucket, Key=metadata_key)
                 metadata = json.loads(metadata_obj['Body'].read().decode('utf-8'))
             
             return {
