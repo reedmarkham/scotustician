@@ -119,6 +119,15 @@ The pipeline runs on AWS Fargate using the CDK-defined infrastructure:
    aws ecs run-task --cluster your-cluster --task-definition scotustician-ingest
    ```
 
+### Scheduled Tasks
+
+The infrastructure automatically creates scheduled ECS tasks:
+
+- **Ingest Task**: Runs at 10 AM UTC on Mondays and Thursdays to fetch new oral argument data from Oyez.org
+  - Configured with EventBridge rule in the IngestStack
+  - Uses the same task definition as manual runs
+  - Environment variables: START_TERM=1980, END_TERM=current year
+
 ## Data Output
 
 ### S3 Structure
