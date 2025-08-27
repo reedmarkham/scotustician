@@ -6,15 +6,14 @@ Contains database operations, data processing, visualization, and export utiliti
 import os, json, logging
 from typing import List, Dict, Any
 
-import psycopg2, pandas as pd, numpy as np, plotly.express as px, plotly.graph_objects as go
-from plotly.offline import plot
+import psycopg2, pandas as pd, numpy as np
 from sklearn.manifold import TSNE
 from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
-def extract_case_embeddings(db_config: Dict[str, str]) -> pd.DataFrame:
+def extract_case_embeddings(db_config: Dict[str, str], start_term: str = None, end_term: str = None) -> pd.DataFrame:
     """Extract weighted average embeddings per case from document chunks."""
     query = """
     WITH case_embeddings AS (
@@ -38,8 +37,9 @@ def extract_case_embeddings(db_config: Dict[str, str]) -> pd.DataFrame:
         FROM scotustician.document_chunk_embeddings 
         WHERE vector IS NOT NULL 
           AND token_count > 0
+          {term_filter}
         GROUP BY case_id
-        HAVING COUNT(*) >= 2  -- Only cases with multiple sections
+        HAVING COUNT(*) >= 1  -- Include all cases with embeddings
     )
     SELECT 
         case_id,
@@ -54,7 +54,23 @@ def extract_case_embeddings(db_config: Dict[str, str]) -> pd.DataFrame:
     ORDER BY case_id;
     """
     
+    # Build term filter
+    term_filter = ""
+    if start_term or end_term:
+        term_conditions = []
+        if start_term:
+            term_conditions.append(f"SPLIT_PART(case_id, '_', 1) >= '{start_term}'")
+        if end_term:
+            term_conditions.append(f"SPLIT_PART(case_id, '_', 1) <= '{end_term}'")
+        term_filter = "AND " + " AND ".join(term_conditions)
+    
+    # Format the query with the term filter
+    query = query.format(term_filter=term_filter)
+    
     logger.info("Extracting case-level embeddings from database...")
+    if start_term or end_term:
+        logger.info(f"Filtering cases for terms: {start_term or 'earliest'} to {end_term or 'latest'}")
+    
     with psycopg2.connect(**db_config) as conn:
         df = pd.read_sql(query, conn)
     
@@ -105,7 +121,7 @@ def compute_tsne(embeddings: np.ndarray, perplexity: int, random_state: int) -> 
     
     return coords
 
-def compute_clusters(embeddings: np.ndarray, n_clusters: int, min_cluster_size: int, random_state: int) -> Dict[str, np.ndarray]:
+def compute_clusters(embeddings: np.ndarray, min_cluster_size: int, random_state: int) -> Dict[str, np.ndarray]:
     """Compute HDBSCAN clustering algorithm."""
     logger.info("Computing clusters...")
     
@@ -114,9 +130,14 @@ def compute_clusters(embeddings: np.ndarray, n_clusters: int, min_cluster_size: 
     
     results = {}
     
-    # HDBSCAN clustering
-    min_cluster_size = min(min_cluster_size, max(2, embeddings.shape[0] // 10))
-    hdbscan = HDBSCAN(min_cluster_size=min_cluster_size)
+    # HDBSCAN clustering - adjust min_cluster_size for smaller datasets
+    n_samples = embeddings.shape[0]
+    adjusted_min_cluster_size = max(2, min(min_cluster_size, max(2, n_samples // 8)))
+    
+    if adjusted_min_cluster_size != min_cluster_size:
+        logger.info(f"Adjusted min_cluster_size from {min_cluster_size} to {adjusted_min_cluster_size} for {n_samples} samples")
+    
+    hdbscan = HDBSCAN(min_cluster_size=adjusted_min_cluster_size)
     hdbscan_labels = hdbscan.fit_predict(embeddings_scaled)
     results['hdbscan'] = hdbscan_labels
     
@@ -125,85 +146,10 @@ def compute_clusters(embeddings: np.ndarray, n_clusters: int, min_cluster_size: 
     
     return results
 
-def create_visualizations(df: pd.DataFrame, timestamp: str, representatives: Dict[str, Dict] = None) -> List[str]:
-    """Create interactive visualizations."""
-    logger.info("Creating visualizations...")
-    
-    viz_files = []
-    
-    # t-SNE scatter plot colored by clusters
-    for cluster_method in ['hdbscan_cluster']:
-        if cluster_method in df.columns:
-            fig = px.scatter(
-                df,
-                x='tsne_x',
-                y='tsne_y',
-                color=cluster_method,
-                hover_data=['case_id', 'docket_number', 'total_tokens', 'section_count'],
-                title=f"Case Clustering: {cluster_method.replace('_', ' ').title()}",
-                labels={'tsne_x': 't-SNE Dimension 1', 'tsne_y': 't-SNE Dimension 2'}
-            )
-            
-            fig.update_traces(marker=dict(size=8, opacity=0.7))
-            
-            # Add representative cases as highlighted points with text annotations
-            if representatives:
-                method_name = cluster_method.replace('_cluster', '')
-                if method_name in representatives:
-                    for cluster_id, cluster_info in representatives[method_name].items():
-                        rep_case = cluster_info['representative_case']
-                        
-                        # Add bold marker for representative
-                        fig.add_trace(go.Scatter(
-                            x=[rep_case['tsne_coords']['x']],
-                            y=[rep_case['tsne_coords']['y']],
-                            mode='markers+text',
-                            marker=dict(
-                                size=12,
-                                color='black',
-                                line=dict(width=2, color='white'),
-                                symbol='circle'
-                            ),
-                            text=[rep_case['docket_number']],
-                            textposition='top center',
-                            textfont=dict(size=10, color='black'),
-                            name=f'Representative (Cluster {cluster_id})',
-                            showlegend=False,
-                            hovertemplate=f"<b>Representative Case</b><br>" +
-                                        f"Cluster: {cluster_id}<br>" +
-                                        f"Case: {rep_case['case_id']}<br>" +
-                                        f"Docket: {rep_case['docket_number']}<br>" +
-                                        f"Distance to centroid: {rep_case['distance_to_centroid']:.3f}<br>" +
-                                        f"Tokens: {rep_case['total_tokens']:,}<extra></extra>"
-                        ))
-            
-            fig.update_layout(height=600, width=800)
-            
-            viz_file = f"case_clustering_{cluster_method}_{timestamp}.html"
-            plot(fig, filename=viz_file, auto_open=False)
-            viz_files.append(viz_file)
-    
-    # Token distribution by cluster
-    if 'hdbscan_cluster' in df.columns:
-        fig = px.box(
-            df,
-            x='hdbscan_cluster',
-            y='total_tokens',
-            title="Token Distribution by HDBSCAN Cluster",
-            labels={'hdbscan_cluster': 'Cluster', 'total_tokens': 'Total Tokens'}
-        )
-        fig.update_layout(height=400, width=800)
-        
-        viz_file = f"token_distribution_{timestamp}.html"
-        plot(fig, filename=viz_file, auto_open=False)
-        viz_files.append(viz_file)
-    
-    logger.info(f"Created {len(viz_files)} visualization files")
-    return viz_files
 
-def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
-    """Find the case closest to each cluster centroid in t-SNE space."""
-    logger.info("Computing cluster centroids and finding representative cases...")
+def find_cluster_representatives(df: pd.DataFrame, embeddings: np.ndarray) -> Dict[str, Dict]:
+    """Find the case closest to each cluster centroid and its 5 nearest neighbors."""
+    logger.info("Computing cluster centroids, finding representative cases, and nearest neighbors...")
     
     representatives = {}
     
@@ -228,7 +174,7 @@ def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
             centroid_x = cluster_data['tsne_x'].mean()
             centroid_y = cluster_data['tsne_y'].mean()
             
-            # Find closest case to centroid
+            # Find closest case to centroid (representative)
             distances = np.sqrt(
                 (cluster_data['tsne_x'] - centroid_x)**2 + 
                 (cluster_data['tsne_y'] - centroid_y)**2
@@ -236,16 +182,67 @@ def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
             closest_idx = distances.idxmin()
             closest_case = cluster_data.loc[closest_idx]
             
+            # Get embeddings for this cluster
+            cluster_indices = cluster_data.index
+            cluster_embeddings = embeddings[cluster_indices]
+            representative_embedding = embeddings[closest_idx]
+            
+            # Compute cosine similarities to representative in embedding space
+            from sklearn.metrics.pairwise import cosine_similarity
+            similarities = cosine_similarity([representative_embedding], cluster_embeddings)[0]
+            
+            # Get indices sorted by similarity (excluding the representative itself)
+            similarity_order = np.argsort(similarities)[::-1]  # Descending order
+            
+            # Find nearest neighbors (excluding the representative)
+            neighbors = []
+            for idx in similarity_order:
+                actual_idx = cluster_indices[idx]
+                if actual_idx != closest_idx:  # Skip the representative itself
+                    neighbor_case = cluster_data.loc[actual_idx]
+                    
+                    # Extract term from case_id (format: "YYYY_docket")
+                    term = neighbor_case['case_id'].split('_')[0]
+                    # Extract case name from docket_number (everything after the first underscore, replace _ with spaces)
+                    case_name_parts = neighbor_case['docket_number'].split('_')[1:]
+                    case_name = ' '.join(case_name_parts).replace('_', ' ') if case_name_parts else neighbor_case['docket_number']
+                    
+                    neighbors.append({
+                        'case_id': neighbor_case['case_id'],
+                        'docket_number': neighbor_case['docket_number'],
+                        'case_name': case_name,
+                        'term': term,
+                        'similarity_to_representative': float(similarities[idx]),
+                        'distance_to_centroid': float(np.sqrt(
+                            (neighbor_case['tsne_x'] - centroid_x)**2 + 
+                            (neighbor_case['tsne_y'] - centroid_y)**2
+                        )),
+                        'total_tokens': int(neighbor_case['total_tokens']),
+                        'section_count': int(neighbor_case['section_count']),
+                        'tsne_coords': {'x': float(neighbor_case['tsne_x']), 'y': float(neighbor_case['tsne_y'])}
+                    })
+                    
+                    if len(neighbors) >= 5:  # Only get top 5 neighbors
+                        break
+            
+            # Extract term and case name for representative
+            rep_term = closest_case['case_id'].split('_')[0]
+            rep_case_name_parts = closest_case['docket_number'].split('_')[1:]
+            rep_case_name = ' '.join(rep_case_name_parts).replace('_', ' ') if rep_case_name_parts else closest_case['docket_number']
+            
             representatives[method_name][int(cluster_id)] = {
                 'centroid': {'x': float(centroid_x), 'y': float(centroid_y)},
                 'representative_case': {
                     'case_id': closest_case['case_id'],
                     'docket_number': closest_case['docket_number'],
+                    'case_name': rep_case_name,
+                    'term': rep_term,
                     'distance_to_centroid': float(distances.loc[closest_idx]),
                     'total_tokens': int(closest_case['total_tokens']),
                     'section_count': int(closest_case['section_count']),
                     'tsne_coords': {'x': float(closest_case['tsne_x']), 'y': float(closest_case['tsne_y'])}
                 },
+                'nearest_neighbors': neighbors,
                 'cluster_size': len(cluster_data),
                 'cluster_stats': {
                     'avg_tokens': float(cluster_data['total_tokens'].mean()),
@@ -256,7 +253,8 @@ def find_cluster_representatives(df: pd.DataFrame) -> Dict[str, Dict]:
             }
     
     total_representatives = sum(len(method_reps) for method_reps in representatives.values())
-    logger.info(f"Found {total_representatives} cluster representatives")
+    total_neighbors = sum(len(cluster_info['nearest_neighbors']) for method_reps in representatives.values() for cluster_info in method_reps.values())
+    logger.info(f"Found {total_representatives} cluster representatives with {total_neighbors} total neighbors")
     
     return representatives
 

@@ -13,7 +13,6 @@ from helpers import (
     prepare_embeddings_matrix,
     compute_tsne,
     compute_clusters,
-    create_visualizations,
     find_cluster_representatives,
     export_results
 )
@@ -42,18 +41,39 @@ class CaseClusteringAnalysis:
         self.tsne_perplexity = int(os.getenv("TSNE_PERPLEXITY", "30"))
         self.min_cluster_size = int(os.getenv("MIN_CLUSTER_SIZE", "5"))
         self.random_state = int(os.getenv("RANDOM_STATE", "42"))
+        
+        # Term filtering parameters
+        self.start_term = os.getenv("START_TERM")
+        self.end_term = os.getenv("END_TERM")
 
 
     def run_analysis(self) -> Dict[str, Any]:
         """Run complete case clustering analysis."""
         logger.info(f"Starting case clustering analysis - {self.timestamp}")
+        if self.start_term and self.end_term:
+            if self.start_term == self.end_term:
+                logger.info(f"Single-term analysis for term: {self.start_term}")
+            else:
+                logger.info(f"Multi-term analysis for term range: {self.start_term} to {self.end_term}")
+        else:
+            logger.info("Analysis for all available terms")
         
         try:
             # Extract case embeddings
-            df = extract_case_embeddings(self.db_config)
+            df = extract_case_embeddings(self.db_config, self.start_term, self.end_term)
             
             if len(df) == 0:
-                raise ValueError("No case embeddings found in database")
+                term_info = ""
+                if self.start_term and self.end_term:
+                    if self.start_term == self.end_term:
+                        term_info = f" for term {self.start_term}"
+                    else:
+                        term_info = f" for term range {self.start_term}-{self.end_term}"
+                raise ValueError(f"No case embeddings found in database{term_info}")
+            
+            logger.info(f"Found {len(df)} cases for analysis")
+            if len(df) < 10:
+                logger.warning(f"Small dataset ({len(df)} cases) - clustering results may be limited")
             
             # Prepare embeddings matrix
             embeddings = prepare_embeddings_matrix(df)
@@ -64,24 +84,22 @@ class CaseClusteringAnalysis:
             df['tsne_y'] = tsne_coords[:, 1]
             
             # Compute clusters
-            clusters = compute_clusters(embeddings, self.n_clusters, self.min_cluster_size, self.random_state)
+            clusters = compute_clusters(embeddings, self.min_cluster_size, self.random_state)
             for method, labels in clusters.items():
                 df[f'{method}_cluster'] = labels
             
             # Find cluster representatives
-            representatives = find_cluster_representatives(df)
+            representatives = find_cluster_representatives(df, embeddings)
             
-            # Create visualizations with representative highlighting
-            viz_files = create_visualizations(df, self.timestamp, representatives)
-            
-            # Export results
+            # Export results (no longer creating visualizations here)
             analysis_params = {
                 'tsne_perplexity': self.tsne_perplexity,
-                'n_clusters': self.n_clusters,
                 'min_cluster_size': self.min_cluster_size,
-                'random_state': self.random_state
+                'random_state': self.random_state,
+                'start_term': self.start_term,
+                'end_term': self.end_term
             }
-            s3_urls = export_results(df, viz_files, self.s3_client, self.bucket, 
+            s3_urls = export_results(df, [], self.s3_client, self.bucket, 
                                    self.output_prefix, self.timestamp, analysis_params, representatives)
             
             logger.info("Analysis completed successfully!")

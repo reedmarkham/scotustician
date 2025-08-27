@@ -13,18 +13,21 @@ OUTPUT_PREFIX=${OUTPUT_PREFIX:-"analysis/case-clustering"}
 
 # Analysis parameters
 TSNE_PERPLEXITY=${TSNE_PERPLEXITY:-30}
-N_CLUSTERS=${N_CLUSTERS:-8}
 MIN_CLUSTER_SIZE=${MIN_CLUSTER_SIZE:-5}
 RANDOM_STATE=${RANDOM_STATE:-42}
 
-echo "Starting case clustering analysis"
+# Term filtering parameters (default to 1980-2025 range)
+START_TERM=${START_TERM:-"1980"}
+END_TERM=${END_TERM:-"2025"}
+
+echo "Starting case cluster generation"
 echo "Configuration:"
 echo "  - Stack: $STACK_NAME"
 echo "  - Region: $AWS_REGION"
 echo "  - Output: s3://$S3_BUCKET/$OUTPUT_PREFIX/"
 echo "  - t-SNE perplexity: $TSNE_PERPLEXITY"
-echo "  - K-means clusters: $N_CLUSTERS"
 echo "  - HDBSCAN min cluster size: $MIN_CLUSTER_SIZE"
+echo "  - Term range: $START_TERM to $END_TERM"
 echo
 
 # Get AWS Batch configuration from clustering stack
@@ -70,9 +73,10 @@ JOB_ID=$(aws batch submit-job \
     S3_BUCKET="$S3_BUCKET",\
     OUTPUT_PREFIX="$OUTPUT_PREFIX",\
     TSNE_PERPLEXITY="$TSNE_PERPLEXITY",\
-    N_CLUSTERS="$N_CLUSTERS",\
     MIN_CLUSTER_SIZE="$MIN_CLUSTER_SIZE",\
-    RANDOM_STATE="$RANDOM_STATE" \
+    RANDOM_STATE="$RANDOM_STATE",\
+    START_TERM="$START_TERM",\
+    END_TERM="$END_TERM" \
   --region "$AWS_REGION" \
   --query "jobId" \
   --output text)
@@ -166,7 +170,6 @@ if [[ "$STATUS" == "SUCCEEDED" ]]; then
   echo "  2. Open visualizations in browser"
   echo "  3. When you have labeled data, use the generated SQL template to join results"
   echo
-  echo "Estimated cost for this run: $0.02-$0.10"
   exit 0
 else
   echo
