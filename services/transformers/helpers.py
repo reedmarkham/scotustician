@@ -1,4 +1,4 @@
-import os, logging, io, json, xml.etree.ElementTree as ET
+import os, logging, io, json, xml.etree.ElementTree as ET, contextlib
 from typing import List, Dict
 
 # Disable tokenizers parallelism to avoid warnings in multi-threaded environment
@@ -37,7 +37,7 @@ def extract_metadata_from_key(key: str) -> Dict[str, str]:
     }
 
 def get_db_connection():
-    """Get PostgreSQL database connection."""
+    """Get PostgreSQL database connection as context manager."""
     POSTGRES_HOST = os.getenv("POSTGRES_HOST")
     POSTGRES_USER = os.getenv("POSTGRES_USER")
     POSTGRES_PASS = os.getenv("POSTGRES_PASS")
@@ -46,12 +46,20 @@ def get_db_connection():
     if not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASS, POSTGRES_DB]):
         raise EnvironmentError("Missing required Postgres environment variables")
     
-    return psycopg2.connect(
-        host=POSTGRES_HOST,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASS,
-        database=POSTGRES_DB
-    )
+    @contextlib.contextmanager
+    def connection_manager():
+        conn = psycopg2.connect(
+            host=POSTGRES_HOST,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASS,
+            database=POSTGRES_DB
+        )
+        try:
+            yield conn
+        finally:
+            conn.close()
+    
+    return connection_manager()
 
 def verify_tables_exist(conn):
     """Verify that required database tables exist."""
@@ -240,62 +248,69 @@ def process_transcript_with_chunking(
         raise
 
 def insert_oa_text_data(utterances_data: List[Dict], conn):
-    """Insert utterance data to oa_text table."""
+    """Insert utterance data to oa_text table with idempotency support."""
     logger.info(f"Inserting {len(utterances_data)} utterances to oa_text table")
     
-    with conn.cursor() as cur:
-        for utt in tqdm(utterances_data, desc="Inserting to oa_text"):
-            cur.execute("""
-                INSERT INTO scotustician.oa_text 
-                (case_id, oa_id, utterance_index, speaker_id, speaker_name, 
-                 text, word_count, token_count, start_time_ms, end_time_ms,
-                 char_start_offset, char_end_offset, source_key)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (case_id, utterance_index) 
-                DO UPDATE SET
-                    speaker_id = EXCLUDED.speaker_id,
-                    speaker_name = EXCLUDED.speaker_name,
-                    text = EXCLUDED.text,
-                    word_count = EXCLUDED.word_count,
-                    token_count = EXCLUDED.token_count,
-                    start_time_ms = EXCLUDED.start_time_ms,
-                    end_time_ms = EXCLUDED.end_time_ms,
-                    char_start_offset = EXCLUDED.char_start_offset,
-                    char_end_offset = EXCLUDED.char_end_offset,
-                    source_key = EXCLUDED.source_key
-            """, (
-                utt['case_id'],
-                utt['oa_id'], 
-                utt['utterance_index'],
-                utt.get('speaker_id'),
-                utt['speaker_name'],
-                utt['text'],
-                utt['word_count'],
-                utt['token_count'],
-                utt.get('start_time_ms'),
-                utt.get('end_time_ms'),
-                utt.get('char_start_offset'),
-                utt.get('char_end_offset'),
-                utt['source_key']
-            ))
-        
-        conn.commit()
+    inserted_count = 0
+    skipped_count = 0
     
-    logger.info(f"Successfully inserted {len(utterances_data)} utterances")
+    for utt in tqdm(utterances_data, desc="Inserting to oa_text"):
+        # Generate deterministic ID based on case_id and utterance_index
+        utterance_id = f"{utt['case_id']}_utterance_{utt['utterance_index']}"
+        
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO scotustician.oa_text 
+                    (id, case_id, oa_id, utterance_index, speaker_id, speaker_name, 
+                     text, word_count, token_count, start_time_ms, end_time_ms,
+                     char_start_offset, char_end_offset, source_key)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    utterance_id,
+                    utt['case_id'],
+                    utt['oa_id'], 
+                    utt['utterance_index'],
+                    utt.get('speaker_id'),
+                    utt['speaker_name'],
+                    utt['text'],
+                    utt['word_count'],
+                    utt['token_count'],
+                    utt.get('start_time_ms'),
+                    utt.get('end_time_ms'),
+                    utt.get('char_start_offset'),
+                    utt.get('char_end_offset'),
+                    utt['source_key']
+                ))
+                conn.commit()
+                inserted_count += 1
+        except psycopg2.IntegrityError as e:
+            if "duplicate key value violates unique constraint" in str(e).lower():
+                logger.debug(f"Utterance {utterance_id} already exists, skipping...")
+                conn.rollback()
+                skipped_count += 1
+                continue
+            else:
+                raise
+    
+    logger.info(f"Successfully processed {len(utterances_data)} utterances: {inserted_count} inserted, {skipped_count} skipped")
 
 def insert_document_chunk_embeddings(chunks: List[Dict], conn):
     """Insert document chunk embeddings into database with idempotency support."""
     logger.info(f"Inserting {len(chunks)} section-based chunk embeddings")
     
-    with conn.cursor() as cur:
-        for chunk in chunks:
-            expected_dim = chunk.get('embedding_dimension', 1024)
-            assert len(chunk['vector']) == expected_dim, f"Embedding has invalid dimension: {len(chunk['vector'])}, expected {expected_dim}"
-            
-            # Generate deterministic ID based on case_id and section_id
-            chunk_id = f"{chunk['case_id']}_section_{chunk['section_id']}"
-            
-            try:
+    inserted_count = 0
+    skipped_count = 0
+    
+    for chunk in chunks:
+        expected_dim = chunk.get('embedding_dimension', 1024)
+        assert len(chunk['vector']) == expected_dim, f"Embedding has invalid dimension: {len(chunk['vector'])}, expected {expected_dim}"
+        
+        # Generate deterministic ID based on case_id and section_id
+        chunk_id = f"{chunk['case_id']}_section_{chunk['section_id']}"
+        
+        try:
+            with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO scotustician.document_chunk_embeddings 
                     (id, case_id, oa_id, section_id, chunk_text, vector, word_count, 
@@ -317,17 +332,18 @@ def insert_document_chunk_embeddings(chunks: List[Dict], conn):
                     chunk['embedding_dimension'],
                     chunk['source_key']
                 ))
-            except psycopg2.IntegrityError as e:
-                if "duplicate key value violates unique constraint" in str(e).lower():
-                    logger.info(f"Embedding for {chunk_id} already exists, skipping...")
-                    conn.rollback()
-                    continue
-                else:
-                    raise
-        
-        conn.commit()
+                conn.commit()
+                inserted_count += 1
+        except psycopg2.IntegrityError as e:
+            if "duplicate key value violates unique constraint" in str(e).lower():
+                logger.debug(f"Embedding for {chunk_id} already exists, skipping...")
+                conn.rollback()
+                skipped_count += 1
+                continue
+            else:
+                raise
     
-    logger.info(f"Successfully processed {len(chunks)} section-based embeddings")
+    logger.info(f"Successfully processed {len(chunks)} section-based embeddings: {inserted_count} inserted, {skipped_count} skipped")
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     """
