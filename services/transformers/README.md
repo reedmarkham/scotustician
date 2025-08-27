@@ -34,7 +34,7 @@ The service implements robust idempotency to ensure safe re-processing:
 - Detailed logging with insert/skip counts for monitoring
 
 ### Schema Alignment
-- Explicit ID management aligns with dbt schema constraints
+- Explicit ID management aligns with [dbt schema constraints](https://github.com/reedmarkham/scotustician-db/blob/main/dbt/models/bronze/schema.yml)
 - Connection management with automatic cleanup via context managers
 - Proper rollback handling for failed insertions
 
@@ -171,7 +171,7 @@ python main.py
 When updating database schemas:
 1. Test changes with `helpers.py` functions
 2. Verify ID generation patterns remain consistent
-3. Update dbt schema definitions in scotustician-db repository
+3. Update [dbt schema definitions](https://github.com/reedmarkham/scotustician-db/blob/main/dbt/models/bronze/schema.yml) in scotustician-db repository
 4. Deploy database changes before service updates
 
 ## Performance Tuning
