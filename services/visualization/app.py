@@ -24,7 +24,7 @@ st.set_page_config(
 
 def main():
     st.title("⚖️ scotustician case clustering")
-    st.markdown("Interactive visualization of Supreme Court case clustering results")
+    st.markdown("Explore the results of DBSCAN clustering over the scotustician oral argument embeddings, using t-SNE to reduce dimensionality for visualization")
     
     data_loader = ClusteringDataLoader()
     visualizer = ClusteringVisualizer()
