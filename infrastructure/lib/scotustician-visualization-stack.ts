@@ -82,7 +82,7 @@ export class ScotusticianVisualizationStack extends Stack {
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
       },
-      securityGroup: ecsSecurityGroup,
+      securityGroups: [ecsSecurityGroup],
       autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
 
