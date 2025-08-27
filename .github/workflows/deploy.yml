@@ -192,6 +192,7 @@ jobs:
           fi
 
       - name: Download shared outputs
+        if: needs.deploy_shared.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
@@ -266,6 +267,7 @@ jobs:
           fi
 
       - name: Download shared outputs
+        if: needs.deploy_shared.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
@@ -362,6 +364,7 @@ jobs:
           fi
 
       - name: Download shared outputs
+        if: needs.deploy_shared.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: cdk-outputs-shared
