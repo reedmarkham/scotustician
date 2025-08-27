@@ -82,6 +82,7 @@ export class ScotusticianVisualizationStack extends Stack {
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
       },
+      securityGroup: ecsSecurityGroup,
       autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });
 
@@ -197,7 +198,6 @@ export class ScotusticianVisualizationStack extends Stack {
       cluster: cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1, // Single instance for cost savings
-      securityGroups: [ecsSecurityGroup],
     });
 
     // Attach service to target group
