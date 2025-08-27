@@ -19,10 +19,20 @@ st.set_page_config(
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
-)
+    )
 
 
 def main():
+    # Add CSS to disable spell checking on text inputs
+    st.markdown("""
+    <style>
+    .stTextInput input {
+        spellcheck: false !important;
+        -webkit-spellcheck: false !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.title("⚖️ scotustician case clustering")
     st.markdown("Explore the results of DBSCAN clustering over the scotustician oral argument embeddings, using t-SNE to reduce dimensionality for visualization")
     
