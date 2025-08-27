@@ -284,7 +284,7 @@ def insert_oa_text_data(utterances_data: List[Dict], conn):
     logger.info(f"Successfully inserted {len(utterances_data)} utterances")
 
 def insert_document_chunk_embeddings(chunks: List[Dict], conn):
-    """Insert document chunk embeddings into database."""
+    """Insert document chunk embeddings into database with idempotency support."""
     logger.info(f"Inserting {len(chunks)} section-based chunk embeddings")
     
     with conn.cursor() as cur:
@@ -292,41 +292,42 @@ def insert_document_chunk_embeddings(chunks: List[Dict], conn):
             expected_dim = chunk.get('embedding_dimension', 1024)
             assert len(chunk['vector']) == expected_dim, f"Embedding has invalid dimension: {len(chunk['vector'])}, expected {expected_dim}"
             
-            cur.execute("""
-                INSERT INTO scotustician.document_chunk_embeddings 
-                (case_id, oa_id, section_id, chunk_text, vector, word_count, 
-                 token_count, start_utterance_index, end_utterance_index, 
-                 embedding_model, embedding_dimension, source_key)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (case_id, section_id) 
-                DO UPDATE SET
-                    chunk_text = EXCLUDED.chunk_text,
-                    vector = EXCLUDED.vector,
-                    word_count = EXCLUDED.word_count,
-                    token_count = EXCLUDED.token_count,
-                    start_utterance_index = EXCLUDED.start_utterance_index,
-                    end_utterance_index = EXCLUDED.end_utterance_index,
-                    embedding_model = EXCLUDED.embedding_model,
-                    embedding_dimension = EXCLUDED.embedding_dimension,
-                    source_key = EXCLUDED.source_key
-            """, (
-                chunk['case_id'],
-                chunk['oa_id'],
-                chunk['section_id'],
-                chunk['chunk_text'],
-                chunk['vector'],
-                chunk['word_count'],
-                chunk['token_count'],
-                chunk['start_utterance_index'],
-                chunk['end_utterance_index'],
-                chunk['embedding_model'],
-                chunk['embedding_dimension'],
-                chunk['source_key']
-            ))
+            # Generate deterministic ID based on case_id and section_id
+            chunk_id = f"{chunk['case_id']}_section_{chunk['section_id']}"
+            
+            try:
+                cur.execute("""
+                    INSERT INTO scotustician.document_chunk_embeddings 
+                    (id, case_id, oa_id, section_id, chunk_text, vector, word_count, 
+                     token_count, start_utterance_index, end_utterance_index, 
+                     embedding_model, embedding_dimension, source_key)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    chunk_id,
+                    chunk['case_id'],
+                    chunk['oa_id'],
+                    chunk['section_id'],
+                    chunk['chunk_text'],
+                    chunk['vector'],
+                    chunk['word_count'],
+                    chunk['token_count'],
+                    chunk['start_utterance_index'],
+                    chunk['end_utterance_index'],
+                    chunk['embedding_model'],
+                    chunk['embedding_dimension'],
+                    chunk['source_key']
+                ))
+            except psycopg2.IntegrityError as e:
+                if "duplicate key value violates unique constraint" in str(e).lower():
+                    logger.info(f"Embedding for {chunk_id} already exists, skipping...")
+                    conn.rollback()
+                    continue
+                else:
+                    raise
         
         conn.commit()
     
-    logger.info(f"Successfully inserted {len(chunks)} section-based embeddings")
+    logger.info(f"Successfully processed {len(chunks)} section-based embeddings")
 
 def get_transcript_s3(bucket: str, key: str) -> str:
     """
