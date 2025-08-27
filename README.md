@@ -18,7 +18,11 @@ Data Pipeline:
    - SQS queues track job progress and provide checkpoint management
    - Built-in idempotency ensures safe re-runs with automatic duplicate detection
    - Assumes database schema is already configured (deployed via scotustician-db repository)
-3. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which must be deployed separately before running transformers.
+3. `clustering` (Docker) performs case-level clustering analysis on stored embeddings:
+   - Computes weighted average embeddings per case based on section token counts
+   - Applies t-SNE dimensionality reduction and HDBSCAN clustering for pattern discovery
+   - Exports interactive visualizations and analysis results to S3 for evaluation
+4. Embeddings are stored in a [PostgreSQL database with pgvector extension](https://www.github.com/reedmarkham/scotustician-db), which must be deployed separately before running transformers.
 
 ## Oral Argument Structure
 
@@ -41,7 +45,8 @@ Each section represents a natural break when attorneys change at the podium, mak
 scotustician/
 ├── services/          	# Application services
 │   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
-│   └── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
+│   ├── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
+│   └── clustering/    	# Python code to perform case-level clustering analysis on embeddings
 ├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
 └── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
 ```

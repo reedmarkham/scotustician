@@ -11,7 +11,6 @@ from plotly.offline import plot
 from sklearn.manifold import TSNE
 from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
 
 logger = logging.getLogger(__name__)
 

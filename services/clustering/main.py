@@ -40,7 +40,6 @@ class CaseClusteringAnalysis:
         
         # Analysis parameters
         self.tsne_perplexity = int(os.getenv("TSNE_PERPLEXITY", "30"))
-        self.n_clusters = int(os.getenv("N_CLUSTERS", "8"))
         self.min_cluster_size = int(os.getenv("MIN_CLUSTER_SIZE", "5"))
         self.random_state = int(os.getenv("RANDOM_STATE", "42"))
 
