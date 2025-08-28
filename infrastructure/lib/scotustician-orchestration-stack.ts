@@ -5,6 +5,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as path from 'path';
 import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
 import { Construct } from 'constructs';
@@ -105,6 +107,21 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
             AssignPublicIp: 'ENABLED',
           },
         },
+        Overrides: {
+          ContainerOverrides: [{
+            Name: 'IngestContainer',
+            Environment: [
+              {
+                Name: 'START_TERM',
+                'Value.$': '$.inputParams.startTerm'
+              },
+              {
+                Name: 'END_TERM', 
+                'Value.$': '$.inputParams.endTerm'
+              }
+            ]
+          }]
+        }
       },
       iamResources: ['*'],
       resultPath: '$.ingestTaskStart',
@@ -113,6 +130,16 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     // Use a simpler approach - wait a fixed time and then check status once
     const waitForIngestCompletion = new stepfunctions.Wait(this, 'WaitForIngestCompletion', {
       time: stepfunctions.WaitTime.duration(cdk.Duration.minutes(10)), // Wait 10 minutes for ingest to complete
+    });
+
+    // Extract input parameters for dynamic configuration
+    const extractInputParams = new stepfunctions.Pass(this, 'ExtractInputParams', {
+      parameters: {
+        'startTerm.$': '$.startTerm',
+        'endTerm.$': '$.endTerm',
+        'mode.$': '$.mode'
+      },
+      resultPath: '$.inputParams'
     });
 
     const checkIngestTaskFinalStatus = new stepfunctionstasks.CallAwsService(this, 'CheckIngestTaskFinalStatus', {
@@ -168,12 +195,12 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
-          S3_BUCKET: 'scotustician',
-          OUTPUT_PREFIX: 'analysis/case-clustering',
-          TSNE_PERPLEXITY: '30',
-          MIN_CLUSTER_SIZE: '5',
-          START_TERM: '1980',
-          END_TERM: '2025',
+          'S3_BUCKET': 'scotustician',
+          'OUTPUT_PREFIX': 'analysis/case-clustering',
+          'TSNE_PERPLEXITY': '30',
+          'MIN_CLUSTER_SIZE': '5',
+          'START_TERM.$': '$.inputParams.startTerm',
+          'END_TERM.$': '$.inputParams.endTerm',
         },
       },
       resultPath: '$.basicClusteringResult',
@@ -186,13 +213,13 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
-          S3_BUCKET: 'scotustician',
-          BASE_OUTPUT_PREFIX: 'analysis/case-clustering-by-term',
-          TSNE_PERPLEXITY: '30',
-          MIN_CLUSTER_SIZE: '5',
-          START_TERM: '1980',
-          END_TERM: '2025',
-          MAX_CONCURRENT_JOBS: '3',
+          'S3_BUCKET': 'scotustician',
+          'BASE_OUTPUT_PREFIX': 'analysis/case-clustering-by-term',
+          'TSNE_PERPLEXITY': '30',
+          'MIN_CLUSTER_SIZE': '5',
+          'START_TERM.$': '$.inputParams.startTerm',
+          'END_TERM.$': '$.inputParams.endTerm',
+          'MAX_CONCURRENT_JOBS': '3',
         },
       },
       resultPath: '$.termByTermClusteringResult',
@@ -227,7 +254,8 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Definition
     //
-    const definition = costBaselineTask
+    const definition = extractInputParams
+      .next(costBaselineTask)
       .next(startIngestTask)
       .next(waitForIngestCompletion)
       .next(checkIngestTaskFinalStatus)
@@ -268,9 +296,37 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    //
+    // Schedule for current year processing during SCOTUS term
+    // First Monday in October through Second Friday in July
+    //
+    const currentYear = new Date().getFullYear().toString();
+    const scheduleRule = new events.Rule(this, 'CurrentYearScheduleRule', {
+      schedule: events.Schedule.cron({
+        minute: '0',
+        hour: '14', // 10 AM ET (14:00 UTC)
+        weekDay: 'MON,THU',
+        month: 'OCT-DEC,JAN-JUL', // Supreme Court term months
+      }),
+      description: 'Schedule current year data processing twice weekly during SCOTUS term (Oct-Jul)',
+    });
+
+    scheduleRule.addTarget(new targets.SfnStateMachine(this.stateMachine, {
+      input: events.RuleTargetInput.fromObject({
+        startTerm: currentYear,
+        endTerm: currentYear,
+        mode: 'scheduled'
+      })
+    }));
+
     new cdk.CfnOutput(this, 'StateMachineArn', {
       value: this.stateMachine.stateMachineArn,
       description: 'Step Functions State Machine ARN',
+    });
+
+    new cdk.CfnOutput(this, 'ScheduleRuleArn', {
+      value: scheduleRule.ruleArn,
+      description: 'EventBridge Schedule Rule ARN for current year processing',
     });
 
     new cdk.CfnOutput(this, 'NotificationTopicArn', {

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Scotustician Step Functions Pipeline Runner
-# Automated serverless execution - no laptop required
+# Current year data processing - automated serverless execution
 
 set -e
 
@@ -12,16 +12,23 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Configuration for current year processing
 START_DATE=$(date +%Y-%m-%d)
 AWS_REGION=${AWS_REGION:-us-east-1}
 STACK_NAME=${STACK_NAME:-"ScotusticianOrchestrationStack"}
+CURRENT_YEAR=$(date +%Y)
+START_TERM=${START_TERM:-$CURRENT_YEAR}
+END_TERM=${END_TERM:-$CURRENT_YEAR}
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Scotustician Step Functions Pipeline${NC}"
+echo -e "${BLUE}  Scotustician Current Year Pipeline${NC}"
 echo -e "${BLUE}========================================${NC}"
-echo "Start Date: $START_DATE"
+echo "Processing Term: $START_TERM"
+echo "Start Date: $START_DATE" 
 echo "AWS Region: $AWS_REGION"
+echo ""
+echo -e "${YELLOW}Note: Processing current year data only${NC}"
+echo -e "${YELLOW}For historical backfill (1980-2025), use: ./backfill.sh${NC}"
 echo ""
 
 echo "Starting Step Functions orchestrated pipeline..."
@@ -45,14 +52,18 @@ echo "Found Step Functions state machine:"
 echo "  ARN: $STATE_MACHINE_ARN"
 echo ""
 
-# Start execution
-EXECUTION_NAME="scotustician-pipeline-$(date +%Y%m%d-%H%M%S)"
+# Start execution with current year parameters
+EXECUTION_NAME="scotustician-current-$(date +%Y%m%d-%H%M%S)"
 
 echo "Starting execution: $EXECUTION_NAME"
 EXECUTION_ARN=$(aws stepfunctions start-execution \
     --state-machine-arn "$STATE_MACHINE_ARN" \
     --name "$EXECUTION_NAME" \
-    --input '{}' \
+    --input "{
+        \"startTerm\": \"$START_TERM\",
+        \"endTerm\": \"$END_TERM\",
+        \"mode\": \"current\"
+    }" \
     --region "$AWS_REGION" \
     --query "executionArn" \
     --output text)

@@ -9,35 +9,50 @@
 
 ## Pipeline Orchestration
 
-The scotustician pipeline can be executed in two ways:
+The scotustician pipeline supports both historical data processing and ongoing current-year updates:
 
-### Automated Serverless Execution (Recommended)
+### Current Year Processing (Automated)
 
-Use AWS Step Functions for hands-off pipeline orchestration:
+**Scheduled Execution**: Step Functions automatically runs twice weekly (Monday/Thursday 10 AM ET) during the Supreme Court's active term (October through July) to process current year SCOTUS data.
+
+**Manual Current Year**: For immediate current year processing:
 
 ```bash
-./run.sh
+./scripts/run.sh
 ```
 
-**Benefits:**
-- **Serverless**: No laptop required - close your computer and let AWS handle everything
+### Historical Data Backfill (One-time)
+
+For processing all historical SCOTUS data from 1980-2025:
+
+```bash
+./scripts/backfill.sh
+```
+
+### Pipeline Features
+
+Both execution modes provide:
+- **Serverless**: No laptop required - close your computer and let AWS handle everything  
 - **Parallel Processing**: Basic and term-by-term clustering run simultaneously
 - **Cost Tracking**: Automated cost reports at pipeline start and completion
 - **Error Recovery**: Automatic retries and SNS notifications for failures
 - **Visual Monitoring**: Real-time progress in AWS Console
 
-The Step Functions workflow orchestrates:
-1. Cost baseline measurement
-2. Data ingestion (ECS Fargate)
-3. Data verification (S3)
-4. Embedding generation (AWS Batch)
-5. Embedding verification (PostgreSQL)
-6. Parallel clustering analysis (AWS Batch)
-   - Basic case clustering
-   - Term-by-term clustering
-7. Final cost report and notifications
+### Step Functions Workflow
 
-### Manual Execution
+All executions follow the same orchestrated workflow:
+1. **Parameter extraction** - Parse input terms and execution mode
+2. **Cost baseline** - Measure AWS costs before processing
+3. **Data ingestion** - Collect SCOTUS data via ECS Fargate
+4. **Data verification** - Validate S3 storage
+5. **Embedding generation** - Create text embeddings via AWS Batch
+6. **Embedding verification** - Validate PostgreSQL storage
+7. **Parallel clustering** - Run analysis via AWS Batch
+   - Basic case clustering
+   - Term-by-term clustering  
+8. **Final cost report** - Calculate total processing costs
+
+### Manual Component Execution
 
 For granular control, run individual pipeline components using the scripts in [`scripts/README.md`](scripts/README.md).
 

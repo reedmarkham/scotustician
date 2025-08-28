@@ -1,6 +1,6 @@
 # Scripts
 
-After deployment via CDK, you can run the data ingestion and transformation tasks using the provided shell scripts. These scripts automatically retrieve AWS resource identifiers from CloudFormation outputs, eliminating the need for manual configuration.
+The `scripts/` directory provides tools for both automated pipeline execution and manual component control.
 
 ## Prerequisites
 
@@ -8,15 +8,24 @@ After deployment via CDK, you can run the data ingestion and transformation task
 2. Verify that all CDK stacks have been successfully deployed
 3. Make scripts executable: `chmod +x scripts/*.sh`
 
-## Available Scripts
+## Pipeline Execution Scripts
 
-The `scripts/` directory contains the following utilities:
+### Automated Pipeline Orchestration
 
-| File | Usage |
-|--------|---------|
-| `bootstrap.sh` | Gets account ID and region from AWS CLI to run the CDK bootstrap command with the custom qualifier for consistent deployments |
-| `embeddings.sh` | Submits AWS Batch array jobs for distributed embedding generation using [Ray Data](https://docs.ray.io/en/latest/data/data.html) with GPU spot instances |
-| `ingest.sh` | Runs ECS Fargate tasks to fetch SCOTUS oral arguments from Oyez.org API with incremental load support |
+| File | Usage | Description |
+|------|-------|-------------|
+| `run.sh` | Current year processing | Step Functions orchestration for current year SCOTUS data |
+| `backfill.sh` | Historical data processing | Step Functions orchestration for 1980-2025 historical backfill |
+
+### Individual Component Scripts
+
+For granular control over individual pipeline components:
+
+| File | Usage | Description |
+|------|-------|-------------|
+| `bootstrap.sh` | CDK environment setup | Configures CDK bootstrap with custom qualifier |
+| `ingest.sh` | Manual data ingestion | Runs ECS Fargate tasks to fetch SCOTUS data from Oyez.org API |
+| `embeddings.sh` | Manual embedding generation | Submits AWS Batch jobs for distributed embedding generation |
 
 
 ## Running Data Ingestion
@@ -35,7 +44,17 @@ This script will:
 - Display real-time configuration and launch progress
 - Automatically use default security groups for the VPC
 
-**Note**: The infrastructure stack also creates a scheduled ECS task that automatically runs the ingest process at 10 AM UTC on Mondays and Thursdays. This ensures regular data updates without manual intervention.
+## Pipeline Scheduling
+
+**Automated Processing**: The system automatically processes current year data via Step Functions:
+- **Schedule**: Twice weekly (Monday/Thursday 10 AM ET) during Supreme Court term (October-July)
+- **Scope**: Current year data only
+- **Trigger**: EventBridge rule in ScotusticianOrchestrationStack
+
+**Manual Options**:
+- **Current year**: `./run.sh` - processes current year only
+- **Historical backfill**: `./backfill.sh` - processes all data from 1980-2025
+- **Individual components**: Use scripts below for granular control
 
 You can override environment variables:
 ```bash

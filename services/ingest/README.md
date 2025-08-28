@@ -121,12 +121,17 @@ The pipeline runs on AWS Fargate using the CDK-defined infrastructure:
 
 ### Scheduled Tasks
 
-The infrastructure automatically creates scheduled ECS tasks:
+The ingest task is orchestrated via Step Functions scheduling:
 
-- **Ingest Task**: Runs at 10 AM UTC on Mondays and Thursdays to fetch new oral argument data from Oyez.org
-  - Configured with EventBridge rule in the IngestStack
-  - Uses the same task definition as manual runs
-  - Environment variables: START_TERM=1980, END_TERM=current year
+- **Scheduled Execution**: Runs twice weekly (Monday/Thursday 10 AM ET) during Supreme Court term (October-July)
+  - Automatically processes current year data only
+  - Triggered by EventBridge rule in OrchestrationStack
+  - Parameters: START_TERM=current year, END_TERM=current year
+
+- **Manual Execution Options**:
+  - **Current year**: `./scripts/run.sh` (processes current year only)
+  - **Historical backfill**: `./scripts/backfill.sh` (processes 1980-2025)
+  - **Individual components**: See `scripts/README.md`
 
 ## Data Output
 
