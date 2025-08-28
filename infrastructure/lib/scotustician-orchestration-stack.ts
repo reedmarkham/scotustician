@@ -274,10 +274,7 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       stateMachineType: stepfunctions.StateMachineType.STANDARD,
       timeout: cdk.Duration.hours(6),
       logs: {
-        destination: new logs.LogGroup(this, 'StateMachineLogGroup', {
-          logGroupName: '/aws/stepfunctions/scotustician-pipeline',
-          retention: logs.RetentionDays.ONE_MONTH,
-        }),
+        destination: logs.LogGroup.fromLogGroupName(this, 'StateMachineLogGroup', '/aws/stepfunctions/scotustician-pipeline'),
         level: stepfunctions.LogLevel.ALL,
       },
     });
