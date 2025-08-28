@@ -12,6 +12,7 @@ import {
 import { 
   DatabaseInstance, DatabaseInstanceEngine, PostgresEngineVersion, SubnetGroup, Credentials, StorageType, ParameterGroup 
 } from 'aws-cdk-lib/aws-rds';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Function as LambdaFunction, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
 import { Provider } from 'aws-cdk-lib/custom-resources';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
@@ -97,9 +98,9 @@ export class ScotusticianDbStack extends Stack {
       subnetGroup,
       securityGroups: [dbSecurityGroup],
       databaseName: 'scotustician',
-      credentials: Credentials.fromGeneratedSecret('dbuser', {
-        secretName: 'scotustician-db-credentials',
-      }),
+      credentials: Credentials.fromSecret(
+        Secret.fromSecretNameV2(this, 'ImportedDbSecret', 'scotustician-db-credentials')
+      ),
       allocatedStorage: 20,
       storageType: StorageType.GP2,
       backupRetention: Duration.days(7),
