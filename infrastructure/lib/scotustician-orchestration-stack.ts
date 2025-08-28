@@ -110,7 +110,7 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.ingestTaskStart',
     });
 
-    const waitForIngestTask = new stepfunctionstasks.CallAwsService(this, 'WaitForIngestTask', {
+    const checkIngestTaskStatus = new stepfunctionstasks.CallAwsService(this, 'CheckIngestTaskStatus', {
       service: 'ecs',
       action: 'describeTasks',
       parameters: {
@@ -121,7 +121,11 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.ingestTaskStatus',
     });
 
-    const checkIngestTaskStatus = new stepfunctions.Choice(this, 'CheckIngestTaskStatus')
+    const waitBeforeRetry = new stepfunctions.Wait(this, 'WaitBeforeRetry', {
+      time: stepfunctions.WaitTime.duration(cdk.Duration.seconds(30)),
+    });
+
+    const evaluateIngestTaskStatus = new stepfunctions.Choice(this, 'EvaluateIngestTaskStatus')
       .when(
         stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
         new stepfunctions.Choice(this, 'CheckIngestTaskExitCode')
@@ -136,11 +140,11 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
             })
           )
       )
-      .otherwise(
-        new stepfunctions.Wait(this, 'WaitForIngestTaskCompletion', {
-          time: stepfunctions.WaitTime.duration(cdk.Duration.seconds(30)),
-        }).next(waitForIngestTask)
-      );
+      .otherwise(waitBeforeRetry);
+
+    // Create the polling loop
+    waitBeforeRetry.next(checkIngestTaskStatus);
+    checkIngestTaskStatus.next(evaluateIngestTaskStatus);
 
     const verifyS3DataTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
@@ -230,8 +234,8 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     const definition = costBaselineTask
       .next(startIngestTask)
-      .next(waitForIngestTask)
-      .next(checkIngestTaskStatus.afterwards()
+      .next(checkIngestTaskStatus)
+      .next(evaluateIngestTaskStatus.afterwards()
         .next(verifyS3DataTask)
         .next(s3DataCheck.afterwards()
           .next(verifyEmbeddingsTask)
