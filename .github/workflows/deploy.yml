@@ -91,7 +91,7 @@ jobs:
     secrets: inherit
 
   deploy_clustering:
-    needs: [plan, deploy_shared]
+    needs: [plan, deploy_shared, deploy_ingest]
     if: needs.plan.outputs.deploy_clustering == 'true'
     uses: ./.github/workflows/deploy-stack.yml
     with:
@@ -116,3 +116,21 @@ jobs:
       stack_name: "ScotusticianOrchestrationStack"
       outputs_file: "cdk-outputs-orchestration.json"
     secrets: inherit
+
+  deploy_db:
+    needs: deploy_shared
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: npm ci
+        working-directory: infrastructure
+      - name: Deploy ScotusticianDbStack with IAM ARN context
+        run: |
+          npx cdk deploy ScotusticianDbStack --require-approval never --context awsIamArn=${{ secrets.AWS_IAM_ARN }}
+        working-directory: infrastructure
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
