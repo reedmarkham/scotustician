@@ -23,7 +23,7 @@ export class ScotusticianClusteringStack extends Stack {
   public readonly jobDefinitionArn: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianClusteringStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,

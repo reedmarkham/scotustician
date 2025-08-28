@@ -1,6 +1,6 @@
 import { Construct } from 'constructs';
 
-import { Stack, StackProps, CfnOutput, Tags } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, Tags, DefaultStackSynthesizer } from 'aws-cdk-lib';
 import { Vpc, SubnetType, GatewayVpcEndpointAwsService, InterfaceVpcEndpointAwsService } from 'aws-cdk-lib/aws-ec2';
 import { Cluster } from 'aws-cdk-lib/aws-ecs';
 import { Bucket, IBucket } from 'aws-cdk-lib/aws-s3';
@@ -18,7 +18,12 @@ export class ScotusticianSharedStack extends Stack {
   public readonly scotusticianBucket: IBucket;
 
   constructor(scope: Construct, id: string, props: ScotusticianSharedStackProps) {
-    super(scope, id, props);
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
+    
+    super(scope, id, {
+      ...props,
+      synthesizer: new DefaultStackSynthesizer({ qualifier }),
+    });
     this.awsIamArn = props.awsIamArn;
 
     // Apply resource tags to entire stack

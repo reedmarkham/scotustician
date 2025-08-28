@@ -19,7 +19,7 @@ export class ScotusticianIngestStack extends Stack {
   public readonly taskDefinitionArn: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianIngestStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,

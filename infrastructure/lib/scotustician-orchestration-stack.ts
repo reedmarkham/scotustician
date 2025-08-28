@@ -43,7 +43,7 @@ export class ScotusticianOrchestrationStack extends Stack {
   public readonly notificationTopic: Topic;
 
   constructor(scope: Construct, id: string, props: ScotusticianOrchestrationStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,

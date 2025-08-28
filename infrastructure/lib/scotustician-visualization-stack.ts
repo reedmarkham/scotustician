@@ -21,10 +21,10 @@ export interface ScotusticianVisualizationStackProps extends StackProps {
 
 export class ScotusticianVisualizationStack extends Stack {
   public readonly loadBalancerDnsName: string;
-  public readonly ecsService: FargateService;
+  public readonly ecsService: Ec2Service;
 
   constructor(scope: Construct, id: string, props: ScotusticianVisualizationStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,

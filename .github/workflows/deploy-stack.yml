@@ -128,7 +128,7 @@ jobs:
           cd infrastructure
           npx cdk synth ${{ inputs.stack_name }} \
             --context awsIamArn=${{ secrets.AWS_IAM_ARN }} \
-            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER > /dev/null
+            --context @aws-cdk:bootstrap-qualifier=$BOOTSTRAP_QUALIFIER > /dev/null
           
           if aws cloudformation describe-stacks --stack-name ${{ inputs.stack_name }} >/dev/null 2>&1; then
             echo "Checking for stack drift..."
@@ -195,7 +195,7 @@ jobs:
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             DEPLOY_CMD="npx cdk deploy ${{ inputs.stack_name }} \
-              --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER \
+              --context @aws-cdk:bootstrap-qualifier=$BOOTSTRAP_QUALIFIER \
               --toolkit-stack-name $TOOLKIT_STACK \
               $CONTEXT_FLAGS \
               --require-approval never \

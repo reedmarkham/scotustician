@@ -26,7 +26,7 @@ export class ScotusticianTransformersStack extends Stack {
   public readonly jobDefinitionArn: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianTransformersStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
     const useGpu = scope.node.tryGetContext('useGpu') === 'true';
 
     super(scope, id, {

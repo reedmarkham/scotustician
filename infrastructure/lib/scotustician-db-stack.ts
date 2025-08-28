@@ -34,7 +34,7 @@ export interface ScotusticianDbStackProps extends StackProps {
 
 export class ScotusticianDbStack extends Stack {
   constructor(scope: Construct, id: string, props: ScotusticianDbStackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+    const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,
