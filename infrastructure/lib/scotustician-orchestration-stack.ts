@@ -1,10 +1,13 @@
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-import { Topic } from 'aws-cdk-lib/aws-sns';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Rule, Schedule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
+import { Topic } from 'aws-cdk-lib/aws-sns';
 import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
+import { Function as LambdaFunction, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
 import {
   Stack, StackProps, DefaultStackSynthesizer, Tags, Duration, CfnOutput
 } from 'aws-cdk-lib';
@@ -15,15 +18,6 @@ import {
 import {
   LambdaInvoke, CallAwsService, BatchSubmitJob
 } from 'aws-cdk-lib/aws-stepfunctions-tasks';
-import {
-  Function as LambdaFunction, Runtime, Code
-} from 'aws-cdk-lib/aws-lambda';
-import {
-  PolicyStatement, Effect
-} from 'aws-cdk-lib/aws-iam';
-import {
-  Rule, Schedule, RuleTargetInput
-} from 'aws-cdk-lib/aws-events';
 
 
 export interface ScotusticianOrchestrationStackProps extends StackProps {
