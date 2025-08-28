@@ -279,7 +279,7 @@ export class ScotusticianDbStack extends Stack {
 
     // Create dbt Docker image asset
     const dbtImage = new DockerImageAsset(this, 'DbtImage', {
-      directory: path.join(__dirname, '../dbt'),
+      directory: path.join(__dirname, '../../database/dbt'),
       platform: Platform.LINUX_AMD64,
     });
 
