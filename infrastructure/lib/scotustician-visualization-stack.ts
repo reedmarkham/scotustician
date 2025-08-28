@@ -9,7 +9,6 @@ import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-clo
 import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { ApplicationLoadBalancer, ApplicationTargetGroup, ApplicationProtocol, TargetType } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import { ScalableTarget, ServiceNamespace, AdjustmentType, TargetTrackingScalingPolicy } from 'aws-cdk-lib/aws-applicationautoscaling';
 import { 
   Cluster, FargateService, FargateTaskDefinition, ContainerImage, LogDrivers, ContainerInsights 
 } from 'aws-cdk-lib/aws-ecs';
@@ -178,11 +177,11 @@ export class ScotusticianVisualizationStack extends Stack {
       defaultTargetGroups: [targetGroup],
     });
 
-    // Create Fargate service with auto-scaling - use public subnets for cost optimization
+    // Create always-on Fargate service with single task (t3.micro equivalent)
     this.ecsService = new FargateService(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
-      desiredCount: 1, // Start with one instance
+      desiredCount: 1, // Always maintain 1 instance
       vpcSubnets: { subnetType: SubnetType.PUBLIC },
       securityGroups: [ecsSecurityGroup],
       assignPublicIp: true, // Required for Fargate in public subnets
@@ -190,42 +189,6 @@ export class ScotusticianVisualizationStack extends Stack {
 
     // Attach service to target group
     this.ecsService.attachToApplicationTargetGroup(targetGroup);
-
-    // Configure auto scaling with inactivity scale-down
-    const scalableTarget = new ScalableTarget(this, 'VisualizationScalableTarget', {
-      serviceNamespace: ServiceNamespace.ECS,
-      scalableDimension: 'ecs:service:DesiredCount',
-      resourceId: `service/${cluster.clusterName}/${this.ecsService.serviceName}`,
-      minCapacity: 0, // Can scale down to zero for cost savings
-      maxCapacity: 3,
-    });
-
-    // Target tracking scaling based on ALB requests - scales up on traffic
-    const targetTrackingPolicy = new TargetTrackingScalingPolicy(this, 'RequestCountScaling', {
-      scalingTarget: scalableTarget,
-      targetValue: 10, // Target 10 requests per minute per task
-      customMetric: targetGroup.metrics.requestCount({
-        statistic: 'Sum',
-        period: Duration.minutes(1),
-      }),
-      scaleInCooldown: Duration.minutes(60), // Wait 1 hour before scaling down
-      scaleOutCooldown: Duration.minutes(3), // Quick scale out
-    });
-
-    // Scale down to zero after 1 hour of no requests
-    scalableTarget.scaleOnMetric('InactivityScaleDown', {
-      metric: targetGroup.metrics.requestCount({
-        statistic: 'Sum',
-        period: Duration.minutes(60), // 1 hour window
-      }),
-      scalingSteps: [
-        { upper: 0, change: -1 }, // If 0 requests in 1 hour, scale down by 1
-        { lower: 1, upper: 5, change: 0 }, // If 1-5 requests, no change
-      ],
-      adjustmentType: AdjustmentType.CHANGE_IN_CAPACITY,
-      cooldown: Duration.minutes(60),
-      evaluationPeriods: 1,
-    });
 
     this.loadBalancerDnsName = loadBalancer.loadBalancerDnsName;
 
@@ -313,13 +276,13 @@ export class ScotusticianVisualizationStack extends Stack {
       description: 'SNS topic for visualization infrastructure alerts',
     });
 
-    new CfnOutput(this, 'AutoScalingInfo', {
-      value: 'Service scales 0-3 tasks. Scales down to 0 after 1 hour of no requests, scales up automatically on new traffic',
-      description: 'Auto-scaling behavior',
+    new CfnOutput(this, 'ServiceInfo', {
+      value: 'Always-on single Fargate task (t3.micro equivalent: 0.25 vCPU, 0.5 GB RAM)',
+      description: 'Service configuration',
     });
 
     new CfnOutput(this, 'CostOptimization', {
-      value: 'Fargate on-demand pricing: ~$0.01/hour when running, $0 when scaled to zero',
+      value: 'Fargate on-demand pricing: ~$0.01/hour for continuous availability',
       description: 'Cost information',
     });
   }

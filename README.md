@@ -76,6 +76,7 @@ For granular control, run individual pipeline components using the scripts in [`
 
 4. **`visualization`** - Streamlit web app for exploring results:
    - Interactive plots and case analysis
+   - Always-on single Fargate task (t3.micro equivalent: 0.25 vCPU, 0.5 GB RAM)
    - Deployed automatically via GitHub Actions to AWS ECS
    - Access via URL in [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 
@@ -211,7 +212,7 @@ The project deploys six AWS CDK stacks via GitHub Actions:
 2. **ScotusticianIngestStack** - ECS task definition for data ingestion
 3. **ScotusticianTransformersStack** - AWS Batch for embedding generation
 4. **ScotusticianClusteringStack** - AWS Batch for clustering analysis
-5. **ScotusticianVisualizationStack** - ECS service for Streamlit web app
+5. **ScotusticianVisualizationStack** - Always-on ECS service for Streamlit web app
 6. **ScotusticianOrchestrationStack** - Step Functions workflow with Lambda functions for cost tracking and data verification
 
 **Database Components (in shared stack):**
