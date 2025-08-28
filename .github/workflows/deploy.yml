@@ -44,25 +44,30 @@ jobs:
               - 'database/**'
               - '.github/workflows/**'
             ingest:
-              - 'infrastructure/**'
+              - 'infrastructure/lib/scotustician-ingest-stack.ts'
+              - 'infrastructure/bin/**'
               - 'services/ingest/**'
               - '.github/workflows/**'
             transformers:
-              - 'infrastructure/**'
+              - 'infrastructure/lib/scotustician-transformers-stack.ts'
+              - 'infrastructure/bin/**'
               - 'services/transformers/**'
               - 'database/**'
               - '.github/workflows/**'
             clustering:
-              - 'infrastructure/**'
+              - 'infrastructure/lib/scotustician-clustering-stack.ts'
+              - 'infrastructure/bin/**'
               - 'services/clustering/**'
               - 'database/**'
               - '.github/workflows/**'
             visualization:
-              - 'infrastructure/**'
+              - 'infrastructure/lib/scotustician-visualization-stack.ts'
+              - 'infrastructure/bin/**'
               - 'services/visualization/**'
               - '.github/workflows/**'
             orchestration:
-              - 'infrastructure/**'
+              - 'infrastructure/lib/scotustician-orchestration-stack.ts'
+              - 'infrastructure/bin/**'
               - 'database/**'
               - '.github/workflows/**'
 
