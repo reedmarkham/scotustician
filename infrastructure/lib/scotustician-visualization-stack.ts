@@ -7,6 +7,7 @@ import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as path from 'path';
 
 export interface ScotusticianVisualizationStackProps extends StackProps {
@@ -111,7 +112,7 @@ export class ScotusticianVisualizationStack extends Stack {
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.LOWEST_PRICE,
-          spotMaxPrice: '$0.05', // Maximum spot price per hour
+          spotMaxPrice: '$0.10', // Maximum spot price per hour
         },
         launchTemplateOverrides: [
           { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL) },
@@ -249,7 +250,7 @@ export class ScotusticianVisualizationStack extends Stack {
     this.ecsService = new ecs.Ec2Service(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
-      desiredCount: 1, // Single instance for cost savings
+      desiredCount: 0, // Scale to zero for cost savings
       capacityProviderStrategies: [
         {
           capacityProvider: capacityProvider.capacityProviderName,
@@ -260,6 +261,29 @@ export class ScotusticianVisualizationStack extends Stack {
 
     // Attach service to target group
     this.ecsService.attachToApplicationTargetGroup(targetGroup);
+
+    // Configure Application Auto Scaling for ECS service
+    const scalableTarget = new applicationautoscaling.ScalableTarget(this, 'VisualizationScalableTarget', {
+      serviceNamespace: applicationautoscaling.ServiceNamespace.ECS,
+      scalableDimension: 'ecs:service:DesiredCount',
+      resourceId: `service/${cluster.clusterName}/${this.ecsService.serviceName}`,
+      minCapacity: 0,
+      maxCapacity: 3,
+    });
+
+    // Add scaling policy that responds to any ALB traffic
+    scalableTarget.scaleOnMetric('VisualizationRequestScaling', {
+      metric: targetGroup.metricRequestCount({
+        statistic: 'Sum',
+      }),
+      scalingSteps: [
+        { upper: 0, change: -1 },   // Scale down if no requests
+        { lower: 1, change: +1 },   // Scale up if any requests  
+      ],
+      adjustmentType: applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+      cooldown: Duration.seconds(60),
+      evaluationPeriods: 1, // React quickly to traffic
+    });
 
     this.loadBalancerDnsName = loadBalancer.loadBalancerDnsName;
 
