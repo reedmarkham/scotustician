@@ -10,10 +10,6 @@ on:
         required: false
         type: string
         default: ""
-      outputs_file:
-        required: false
-        type: string
-        default: ""
       gpu_quota_check:
         required: false
         type: boolean
@@ -198,9 +194,6 @@ jobs:
               --method direct \
               --progress events"
             
-            if [ -n "${{ inputs.outputs_file }}" ]; then
-              DEPLOY_CMD="$DEPLOY_CMD --outputs-file ${{ inputs.outputs_file }}"
-            fi
             
             if eval $DEPLOY_CMD 2>/dev/null; then
               echo "Deployment successful"
@@ -268,9 +261,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload outputs
-        if: ${{ inputs.outputs_file != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.outputs_file }}
-          path: infrastructure/${{ inputs.outputs_file }}

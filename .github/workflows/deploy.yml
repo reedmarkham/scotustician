@@ -77,7 +77,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianSharedStack"
-      outputs_file: "cdk-outputs-shared.json"
       gpu_quota_check: true
     secrets: inherit
 
@@ -87,7 +86,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianIngestStack"
-      outputs_file: "cdk-outputs-ingest.json"
     secrets: inherit
 
   deploy_transformers:
@@ -96,7 +94,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianTransformersStack"
-      outputs_file: "cdk-outputs-transformers.json"
       gpu_quota_check: true
     secrets: inherit
 
@@ -106,7 +103,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianClusteringStack"
-      outputs_file: "cdk-outputs-clustering.json"
     secrets: inherit
 
   deploy_visualization:
@@ -124,7 +120,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
-      outputs_file: "cdk-outputs-orchestration.json"
     secrets: inherit
 
   deploy_db:
