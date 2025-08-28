@@ -89,9 +89,9 @@ All deployment is managed by the CDK app in `infrastructure/`. You do not need t
 Ensure the following secrets are configured in your GitHub repo at **Settings > Secrets and variables > Actions > repository secrets**:
 | Secret Name         | Description             | Example Value                          |
 |---------------------|-------------------------|----------------------------------------|
-| `AWS_ACCOUNT_ID`    | AWS account ID          | `123456789012`                         |
+| `AWS_ACCOUNT_ID`    | AWS account ID          | `YOUR_ACCOUNT_ID`                      |
 | `AWS_REGION`        | AWS region              | `us-east-1`                            |
-| `AWS_IAM_ARN`       | IAM user ARN            | `arn:aws:iam::123456789012:user/scotustician` |
+| `AWS_IAM_ARN`       | IAM user ARN            | `arn:aws:iam::YOUR_ACCOUNT_ID:user/scotustician` |
 | `AWS_ACCESS_KEY`    | IAM user's access key   | `AKIA...`                              |
 | `AWS_SECRET_KEY_ID` | IAM user's secret key   | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY` |
 
@@ -115,7 +115,7 @@ Then, allow the roles created by CDK to trust the aforementioned IAM user:
 ID=<YOUR_IAM_USER_NAME>
 AWS_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 AWS_REGION=<YOUR_REGION>
-DEPLOY_USER_ARN="arn:aws:iam::${ACCOUNT_ID}:user/<ID>"
+DEPLOY_USER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:user/<ID>"
 
 # Trust policy JSON (inline heredoc)
 read -r -d '' TRUST_POLICY <<EOF

@@ -1,0 +1,49 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:RunTask",
+        "ecs:StopTask",
+        "ecs:DescribeTasks",
+        "ecs:DescribeTaskDefinition"
+      ],
+      "Resource": [
+        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:task-definition/scotustician-*",
+        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:task/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "batch:SubmitJob",
+        "batch:DescribeJobs",
+        "batch:ListJobs"
+      ],
+      "Resource": [
+        "arn:aws:batch:YOUR_REGION:YOUR_ACCOUNT_ID:job-queue/scotustician-*",
+        "arn:aws:batch:YOUR_REGION:YOUR_ACCOUNT_ID:job-definition/scotustician-*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::scotustician",
+        "arn:aws:s3:::scotustician/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:scotustician-db-credentials*"
+    }
+  ]
+}

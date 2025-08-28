@@ -135,9 +135,9 @@ Configure the following repository secrets in **GitHub > Settings > Secrets and 
 
 | Secret Name         | Description                                       | Example Value                                      |
 |---------------------|---------------------------------------------------|----------------------------------------------------|  
-| `AWS_ACCOUNT_ID`    | AWS account ID                                    | `123456789012`                                     |
+| `AWS_ACCOUNT_ID`    | AWS account ID                                    | `YOUR_ACCOUNT_ID`                                  |
 | `AWS_REGION`        | AWS region                                        | `us-east-1`                                        |
-| `AWS_IAM_ARN`       | IAM user's ARN                                    | `arn:aws:iam::123456789012:user/github-actions`    |
+| `AWS_IAM_ARN`       | IAM user's ARN                                    | `arn:aws:iam::YOUR_ACCOUNT_ID:user/github-actions` |
 | `AWS_ACCESS_KEY_ID` | IAM user's access key                             | `AKIAIOSFODNN7EXAMPLE`                             |
 | `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key                      | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
 | `S3_BUCKET`         | S3 bucket name (optional, defaults to scotustician) | `scotustician`                                   |
