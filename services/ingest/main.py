@@ -245,7 +245,7 @@ def main():
     # Create pipeline - configuration loaded from .dlt/ directory
     pipeline = dlt.pipeline(
         pipeline_name="scotustician_ingest",
-        destination="s3",
+        destination="filesystem",
         dataset_name="scotustician"
     )
     

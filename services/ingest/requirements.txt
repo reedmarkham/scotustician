@@ -1,4 +1,4 @@
-dlt[s3]==0.4.12
+dlt[filesystem]==1.5.0
 requests==2.31.0
 boto3==1.34.77
 tqdm==4.66.2

@@ -161,10 +161,24 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
         ),
         new stepfunctions.Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
       )
+      .when(
+        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
+        new stepfunctions.Fail(this, 'IngestTaskFailedWithNonZeroExit', {
+          causePath: '$.ingestTaskStatus.Tasks[0].Containers[0].Reason',
+          error: 'INGEST_TASK_FAILED',
+        })
+      )
+      .when(
+        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
+        new stepfunctions.Fail(this, 'IngestTaskTimeout', {
+          cause: 'Ingest task did not complete within 10 minute timeout',
+          error: 'INGEST_TASK_TIMEOUT',
+        })
+      )
       .otherwise(
-        new stepfunctions.Fail(this, 'IngestTaskFailed', {
-          cause: 'Ingest task failed or did not complete within timeout',
-          error: 'INGEST_TASK_ERROR',
+        new stepfunctions.Fail(this, 'IngestTaskUnexpectedStatus', {
+          causePath: '$.ingestTaskStatus.Tasks[0].LastStatus',
+          error: 'INGEST_TASK_UNEXPECTED_STATUS',
         })
       );
 
@@ -329,6 +343,36 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'NotificationTopicArn', {
       value: this.notificationTopic.topicArn,
       description: 'SNS Topic ARN for pipeline notifications',
+    });
+
+    new cdk.CfnOutput(this, 'StepFunctionsLogGroup', {
+      value: '/aws/stepfunctions/scotustician-pipeline',
+      description: 'CloudWatch Log Group for Step Functions execution logs',
+    });
+
+    new cdk.CfnOutput(this, 'StepFunctionsLogGroupConsoleUrl', {
+      value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Faws%2Fstepfunctions%2Fscotustician-pipeline`,
+      description: 'Direct link to Step Functions CloudWatch logs in AWS Console',
+    });
+
+    new cdk.CfnOutput(this, 'IngestTaskLogGroup', {
+      value: '/ecs/scotustician-ingest',
+      description: 'CloudWatch Log Group for ECS Ingest Task logs',
+    });
+
+    new cdk.CfnOutput(this, 'IngestTaskLogGroupConsoleUrl', {
+      value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Fecs%2Fscotustician-ingest`,
+      description: 'Direct link to ECS Ingest Task CloudWatch logs in AWS Console',
+    });
+
+    new cdk.CfnOutput(this, 'BatchJobLogGroup', {
+      value: '/aws/batch/job',
+      description: 'CloudWatch Log Group for AWS Batch job logs (transformers/clustering)',
+    });
+
+    new cdk.CfnOutput(this, 'BatchJobLogGroupConsoleUrl', {
+      value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Faws%2Fbatch%2Fjob`,
+      description: 'Direct link to AWS Batch job CloudWatch logs in AWS Console',
     });
   }
 }
