@@ -6,7 +6,7 @@ import { Construct } from 'constructs';
 export class ScotusticianSharedStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly ingestCluster: ecs.Cluster;
-  public readonly transformersCpuCluster: ecs.Cluster;
+  public readonly cpuCluster: ecs.Cluster;
   public readonly transformersGpuCluster?: ecs.Cluster;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -65,17 +65,17 @@ export class ScotusticianSharedStack extends cdk.Stack {
       clusterName: 'scotustician-ingest',
     });
 
-    // Always create CPU cluster for transformers
-    this.transformersCpuCluster = new ecs.Cluster(this, 'TransformersCpuCluster', {
+    // Always create CPU cluster for shared workloads
+    this.cpuCluster = new ecs.Cluster(this, 'CpuCluster', {
       vpc: this.vpc,
-      clusterName: 'scotustician-transformers-cpu',
+      clusterName: 'scotustician-cpu',
     });
 
     // Only create GPU cluster if GPU is available
     if (useGpu) {
-      this.transformersGpuCluster = new ecs.Cluster(this, 'TransformersGpuCluster', {
+      this.transformersGpuCluster = new ecs.Cluster(this, 'GpuCluster', {
         vpc: this.vpc,
-        clusterName: 'scotustician-transformers-gpu',
+        clusterName: 'scotustician-gpu',
       });
     }
 
@@ -84,12 +84,12 @@ export class ScotusticianSharedStack extends cdk.Stack {
       value: this.ingestCluster.clusterName,
     });
 
-    new cdk.CfnOutput(this, 'TransformersCpuClusterName', {
-      value: this.transformersCpuCluster.clusterName,
+    new cdk.CfnOutput(this, 'CpuClusterName', {
+      value: this.cpuCluster.clusterName,
     });
 
     if (useGpu) {
-      new cdk.CfnOutput(this, 'TransformersGpuClusterName', {
+      new cdk.CfnOutput(this, 'GpuClusterName', {
         value: this.transformersGpuCluster!.clusterName,
       });
     }

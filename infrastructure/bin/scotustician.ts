@@ -26,14 +26,14 @@ const ingest = new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
 const useGpu = app.node.tryGetContext('useGpu') === 'true';
 
 const transformers = new ScotusticianTransformersStack(app, 'ScotusticianTransformersStack', {
-  cluster: useGpu && shared.transformersGpuCluster ? shared.transformersGpuCluster : shared.transformersCpuCluster,
+  cluster: useGpu && shared.transformersGpuCluster ? shared.transformersGpuCluster : shared.cpuCluster,
   vpc: shared.vpc,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
   env,
 });
 
 const clustering = new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
-  cluster: shared.transformersCpuCluster,
+  cluster: shared.cpuCluster,
   vpc: shared.vpc,
   env,
 });
