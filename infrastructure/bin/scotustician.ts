@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import { ScotusticianSharedStack } from '../lib/scotustician-shared-stack';
+import { ScotusticianDbStack } from '../lib/scotustician-db-stack';
 import { ScotusticianIngestStack } from '../lib/scotustician-ingest-stack';
 import { ScotusticianTransformersStack } from '../lib/scotustician-transformers-stack';
 import { ScotusticianClusteringStack } from '../lib/scotustician-clustering-stack';
@@ -15,7 +16,14 @@ const env = {
 
 const app = new cdk.App();
 
+
 const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', { env });
+
+// Deploy DB stack after shared, using the same VPC
+const db = new ScotusticianDbStack(app, 'ScotusticianDbStack', {
+  env,
+  // vpc: shared.vpc, // Uncomment if your constructor supports passing VPC
+});
 
 const ingest = new ScotusticianIngestStack(app, 'ScotusticianIngestStack', {
   cluster: shared.ingestCluster,

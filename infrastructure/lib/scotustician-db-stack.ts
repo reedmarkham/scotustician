@@ -77,7 +77,7 @@ export class ScotusticianDbStack extends cdk.Stack {
 
     const postgresInstance = new rds.DatabaseInstance(this, 'ScotusticianPostgresInstance', {
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_8,
+  version: rds.PostgresEngineVersion.VER_16,
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO), // Cost-effective
       vpc,
@@ -101,7 +101,7 @@ export class ScotusticianDbStack extends cdk.Stack {
       
       parameterGroup: new rds.ParameterGroup(this, 'ScotusticianDbParameterGroup', {
         engine: rds.DatabaseInstanceEngine.postgres({
-          version: rds.PostgresEngineVersion.VER_16_8,
+          version: rds.PostgresEngineVersion.VER_16,
         }),
         parameters: {
           // Common performance-related parameters for PostgreSQL
