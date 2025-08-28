@@ -36,8 +36,8 @@ jobs:
         with:
           filters: |
             shared:
-              - 'infrastructure/**'
-              - 'database/**'
+              - 'infrastructure/lib/scotustician-shared-stack.ts'
+              - 'infrastructure/bin/**'
               - '.github/workflows/**'
             db:
               - 'infrastructure/lib/scotustician-db-stack.ts'
