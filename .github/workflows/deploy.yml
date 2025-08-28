@@ -10,6 +10,12 @@ on:
       - 'LICENSE'
       - '.gitignore'
 
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -58,108 +64,55 @@ jobs:
   deploy_shared:
     needs: plan
     if: needs.plan.outputs.deploy_shared == 'true'
-    uses: ./.github/workflows/_deploy-stack.yml
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianSharedStack"
       outputs_file: "cdk-outputs-shared.json"
       gpu_quota_check: true
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-  deploy_db:
-    needs: deploy_shared
-    if: always()
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack_name: "ScotusticianDbStack"
-      outputs_file: "cdk-outputs-db.json"
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    secrets: inherit
 
   deploy_ingest:
     needs: [plan, deploy_shared]
-    if: |
-      always() && 
-      needs.plan.outputs.deploy_ingest == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
-    uses: ./.github/workflows/_deploy-stack.yml
+    if: needs.plan.outputs.deploy_ingest == 'true'
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianIngestStack"
       outputs_file: "cdk-outputs-ingest.json"
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    secrets: inherit
 
   deploy_transformers:
-    needs: [plan, deploy_shared, deploy_db, deploy_ingest]
-    if: |
-      always() && 
-      needs.plan.outputs.deploy_transformers == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
-      (needs.deploy_db.result == 'success' || needs.deploy_db.result == 'skipped') &&
-      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped')
-    uses: ./.github/workflows/_deploy-stack.yml
+    needs: [plan, deploy_shared, deploy_ingest]
+    if: needs.plan.outputs.deploy_transformers == 'true'
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianTransformersStack"
       outputs_file: "cdk-outputs-transformers.json"
       gpu_quota_check: true
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    secrets: inherit
 
   deploy_clustering:
-    needs: [plan, deploy_shared, deploy_transformers]
-    if: |
-      always() && 
-      needs.plan.outputs.deploy_clustering == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
-      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped')
-    uses: ./.github/workflows/_deploy-stack.yml
+    needs: [plan, deploy_shared]
+    if: needs.plan.outputs.deploy_clustering == 'true'
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianClusteringStack"
       outputs_file: "cdk-outputs-clustering.json"
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    secrets: inherit
 
   deploy_visualization:
     needs: [plan, deploy_shared, deploy_clustering]
-    if: |
-      always() && 
-      needs.plan.outputs.deploy_visualization == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
-      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
-    uses: ./.github/workflows/_deploy-stack.yml
+    if: needs.plan.outputs.deploy_visualization == 'true'
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianVisualizationStack"
       outputs_file: "cdk-outputs-visualization.json"
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    secrets: inherit
 
   deploy_orchestration:
     needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering]
-    if: |
-      always() && 
-      needs.plan.outputs.deploy_orchestration == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
-      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped') &&
-      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped') &&
-      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
-    uses: ./.github/workflows/_deploy-stack.yml
+    if: needs.plan.outputs.deploy_orchestration == 'true'
+    uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
       outputs_file: "cdk-outputs-orchestration.json"
-    secrets:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    secrets: inherit
