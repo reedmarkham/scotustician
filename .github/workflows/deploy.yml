@@ -34,6 +34,7 @@ jobs:
             ingest:
               - 'infrastructure/**'
               - 'services/ingest/**'
+              - '.github/workflows/**'
             transformers:
               - 'infrastructure/**'
               - 'services/transformers/**'

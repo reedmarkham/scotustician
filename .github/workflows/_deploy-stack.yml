@@ -71,7 +71,8 @@ jobs:
             
             case $STACK_STATUS in
               "UPDATE_ROLLBACK_COMPLETE")
-                echo "Stack ready for deployment after rollback"
+                echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing with deployment..."
+                echo "Previous update was rolled back, stack is ready for new deployment"
                 break
                 ;;
               "UPDATE_ROLLBACK_IN_PROGRESS")
