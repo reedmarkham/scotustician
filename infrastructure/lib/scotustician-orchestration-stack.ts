@@ -92,10 +92,9 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.costBaseline',
     });
 
-    const runIngestTask = new stepfunctionstasks.CallAwsService(this, 'RunIngestTask', {
+    const startIngestTask = new stepfunctionstasks.CallAwsService(this, 'StartIngestTask', {
       service: 'ecs',
       action: 'runTask',
-      integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
       parameters: {
         Cluster: props.ingestClusterArn,
         TaskDefinition: props.ingestTaskDefinitionArn,
@@ -108,8 +107,40 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
         },
       },
       iamResources: ['*'],
-      resultPath: '$.ingestResult',
+      resultPath: '$.ingestTaskStart',
     });
+
+    const waitForIngestTask = new stepfunctionstasks.CallAwsService(this, 'WaitForIngestTask', {
+      service: 'ecs',
+      action: 'describeTasks',
+      parameters: {
+        Cluster: props.ingestClusterArn,
+        'Tasks.$': '$.ingestTaskStart.Tasks[0].TaskArn',
+      },
+      iamResources: ['*'],
+      resultPath: '$.ingestTaskStatus',
+    });
+
+    const checkIngestTaskStatus = new stepfunctions.Choice(this, 'CheckIngestTaskStatus')
+      .when(
+        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
+        new stepfunctions.Choice(this, 'CheckIngestTaskExitCode')
+          .when(
+            stepfunctions.Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0),
+            new stepfunctions.Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
+          )
+          .otherwise(
+            new stepfunctions.Fail(this, 'IngestTaskFailed', {
+              cause: 'Ingest task failed with non-zero exit code',
+              error: 'INGEST_TASK_ERROR',
+            })
+          )
+      )
+      .otherwise(
+        new stepfunctions.Wait(this, 'WaitForIngestTaskCompletion', {
+          time: stepfunctions.WaitTime.duration(cdk.Duration.seconds(30)),
+        }).next(waitForIngestTask)
+      );
 
     const verifyS3DataTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
@@ -197,13 +228,19 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Definition
     //
+    // Connect successful ingest completion to S3 verification
+    const ingestSuccess = checkIngestTaskStatus.afterwards();
+    
     const definition = costBaselineTask
-      .next(runIngestTask)
-      .next(verifyS3DataTask)
-      .next(s3DataCheck.afterwards()
-        .next(verifyEmbeddingsTask)
-        .next(embeddingsDataCheck.afterwards()
-          .next(finalCostReportTask)));
+      .next(startIngestTask)
+      .next(waitForIngestTask)
+      .next(checkIngestTaskStatus)
+      .next(ingestSuccess
+        .next(verifyS3DataTask)
+        .next(s3DataCheck.afterwards()
+          .next(verifyEmbeddingsTask)
+          .next(embeddingsDataCheck.afterwards()
+            .next(finalCostReportTask))));
 
     //
     // State Machine
