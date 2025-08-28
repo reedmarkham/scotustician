@@ -9,6 +9,7 @@
     "cdk": "npx cdk"
   },
   "dependencies": {
+    "@aws-cdk/aws-lambda-python-alpha": "^2.130.0-alpha.0",
     "aws-cdk-lib": "2.130.0",
     "constructs": "10.3.0"
   },
@@ -24,6 +25,8 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "testMatch": ["**/?(*.)+(test).ts"]
+    "testMatch": [
+      "**/?(*.)+(test).ts"
+    ]
   }
 }

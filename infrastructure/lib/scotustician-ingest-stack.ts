@@ -6,8 +6,6 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
 export interface ScotusticianIngestStackProps extends StackProps {

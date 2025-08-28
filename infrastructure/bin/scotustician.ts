@@ -33,7 +33,7 @@ const transformers = new ScotusticianTransformersStack(app, 'ScotusticianTransfo
 });
 
 const clustering = new ScotusticianClusteringStack(app, 'ScotusticianClusteringStack', {
-  cluster: shared.transformersCpuCluster, // Always use CPU cluster for clustering
+  cluster: shared.transformersCpuCluster,
   vpc: shared.vpc,
   env,
 });
@@ -43,7 +43,6 @@ new ScotusticianVisualizationStack(app, 'ScotusticianVisualizationStack', {
   env,
 });
 
-// Orchestration stack that depends on all other stacks
 new ScotusticianOrchestrationStack(app, 'ScotusticianOrchestrationStack', {
   ingestClusterArn: shared.ingestCluster.clusterArn,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
@@ -52,7 +51,7 @@ new ScotusticianOrchestrationStack(app, 'ScotusticianOrchestrationStack', {
   clusteringJobQueueArn: clustering.jobQueueArn,
   clusteringJobDefinitionArn: clustering.jobDefinitionArn,
   vpcId: shared.vpc.vpcId,
-  publicSubnetIds: shared.vpc.publicSubnets.map(subnet => subnet.subnetId),
-  privateSubnetIds: shared.vpc.isolatedSubnets.map(subnet => subnet.subnetId),
+  publicSubnetIds: shared.vpc.publicSubnets.map(sn => sn.subnetId),
+  privateSubnetIds: shared.vpc.privateSubnets.map(sn => sn.subnetId),
   env,
 });
