@@ -1,11 +1,15 @@
 import { Construct } from 'constructs';
 
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Size } from 'aws-cdk-lib';
-import { IVpc, SecurityGroup, Peer, Port, InstanceType, InstanceClass, InstanceSize } from 'aws-cdk-lib/aws-ec2';
-import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Secret as SMSecret } from 'aws-cdk-lib/aws-secretsmanager';
+import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
+import { 
+  Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Size 
+} from 'aws-cdk-lib';
+import { 
+  IVpc, SecurityGroup, Peer, Port, InstanceType, InstanceClass, InstanceSize 
+} from 'aws-cdk-lib/aws-ec2';
 import { 
   Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret 
 } from 'aws-cdk-lib/aws-ecs';

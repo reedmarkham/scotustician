@@ -1,32 +1,34 @@
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-import { 
-  Stack, StackProps, CustomResource, Duration, RemovalPolicy, CfnOutput, DefaultStackSynthesizer 
-} from 'aws-cdk-lib';
 import { IBucket } from 'aws-cdk-lib/aws-s3';
-import { 
-  Vpc, SecurityGroup, Peer, Port, SubnetType, GatewayVpcEndpoint, InterfaceVpcEndpoint, GatewayVpcEndpointAwsService, 
-  InterfaceVpcEndpointAwsService, InstanceType, InstanceClass, InstanceSize 
-} from 'aws-cdk-lib/aws-ec2';
-import { 
-  DatabaseInstance, DatabaseInstanceEngine, PostgresEngineVersion, SubnetGroup, Credentials, StorageType, ParameterGroup 
-} from 'aws-cdk-lib/aws-rds';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Function as LambdaFunction, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
 import { Provider } from 'aws-cdk-lib/custom-resources';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
-import { 
-  Role, ServicePrincipal, ManagedPolicy, PolicyDocument, PolicyStatement, ArnPrincipal, Effect
-} from 'aws-cdk-lib/aws-iam';
 import { CfnResourcePolicy } from 'aws-cdk-lib/aws-secretsmanager';
-import { 
-  Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret as EcsSecret, FargatePlatformVersion, ContainerInsights 
-} from 'aws-cdk-lib/aws-ecs';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { EcsTask } from 'aws-cdk-lib/aws-events-targets';
 import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets';
-
+import { 
+  Stack, StackProps, CustomResource, Duration, RemovalPolicy, CfnOutput, DefaultStackSynthesizer 
+} from 'aws-cdk-lib';
+import { 
+  Vpc, SecurityGroup, Peer, Port, SubnetType, GatewayVpcEndpoint, InterfaceVpcEndpoint, 
+  GatewayVpcEndpointAwsService, InterfaceVpcEndpointAwsService, InstanceType, 
+  InstanceClass, InstanceSize 
+} from 'aws-cdk-lib/aws-ec2';
+import { 
+  DatabaseInstance, DatabaseInstanceEngine, PostgresEngineVersion, SubnetGroup, 
+  Credentials, StorageType, ParameterGroup 
+} from 'aws-cdk-lib/aws-rds';
+import { 
+  Role, ServicePrincipal, ManagedPolicy, PolicyDocument, PolicyStatement, ArnPrincipal, Effect
+} from 'aws-cdk-lib/aws-iam';
+import { 
+  Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret as EcsSecret, 
+  FargatePlatformVersion, ContainerInsights 
+} from 'aws-cdk-lib/aws-ecs';
 
 export interface ScotusticianDbStackProps extends StackProps {
   awsIamArn: string;

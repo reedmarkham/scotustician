@@ -2,12 +2,12 @@ import { Construct } from 'constructs';
 
 import type { IVpc } from 'aws-cdk-lib/aws-ec2';
 
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags } from 'aws-cdk-lib';
-import { Cluster, FargateTaskDefinition, ContainerImage, LogDrivers } from 'aws-cdk-lib/aws-ecs';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { LogGroup, MetricFilter, FilterPattern, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags } from 'aws-cdk-lib';
+import { Cluster, FargateTaskDefinition, ContainerImage, LogDrivers } from 'aws-cdk-lib/aws-ecs';
 import { Role, ServicePrincipal, PolicyStatement, PolicyDocument, Effect } from 'aws-cdk-lib/aws-iam';
 
 interface ScotusticianIngestStackProps extends StackProps {

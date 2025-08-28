@@ -1,15 +1,20 @@
 import { Construct } from 'constructs';
 
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration, Size } from 'aws-cdk-lib';
-import { IVpc, SecurityGroup, Peer, Port, InstanceType, InstanceClass, InstanceSize } from 'aws-cdk-lib/aws-ec2';
+import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Secret as SMSecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { LogGroup, MetricFilter, FilterPattern, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
-import { Secret as SMSecret } from 'aws-cdk-lib/aws-secretsmanager';
-import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { 
-  Cluster, TaskDefinition, ContainerDefinition, FargateTaskDefinition, Ec2TaskDefinition, NetworkMode, ContainerImage, LogDrivers, UlimitName, Secret 
+  IVpc, SecurityGroup, Peer, Port, InstanceType, InstanceClass, InstanceSize 
+} from 'aws-cdk-lib/aws-ec2';
+import { 
+  Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration, Size 
+} from 'aws-cdk-lib';
+import { 
+  Cluster, TaskDefinition, ContainerDefinition, FargateTaskDefinition, Ec2TaskDefinition, 
+  NetworkMode, ContainerImage, LogDrivers, UlimitName, Secret 
 } from 'aws-cdk-lib/aws-ecs';
 import { 
   ManagedEc2EcsComputeEnvironment, JobQueue, EcsJobDefinition, EcsEc2ContainerDefinition 

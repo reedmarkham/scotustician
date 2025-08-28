@@ -1,14 +1,20 @@
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration } from 'aws-cdk-lib';
-import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
-import { Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
-import { LogGroup, RetentionDays, MetricFilter, FilterPattern } from 'aws-cdk-lib/aws-logs';
-import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
-import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { Topic } from 'aws-cdk-lib/aws-sns';
-import { ApplicationLoadBalancer, ApplicationTargetGroup, ApplicationProtocol, TargetType } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
+import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
+import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
+import { LogGroup, RetentionDays, MetricFilter, FilterPattern } from 'aws-cdk-lib/aws-logs';
+import { 
+  Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect 
+} from 'aws-cdk-lib/aws-iam';
+import { 
+  Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration 
+} from 'aws-cdk-lib';
+import { 
+  ApplicationLoadBalancer, ApplicationTargetGroup, ApplicationProtocol, TargetType 
+} from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { 
   Cluster, FargateService, FargateTaskDefinition, ContainerImage, LogDrivers, ContainerInsights 
 } from 'aws-cdk-lib/aws-ecs';

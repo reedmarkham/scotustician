@@ -1,9 +1,9 @@
 import { Construct } from 'constructs';
 
-import { Stack, StackProps, CfnOutput, Tags, DefaultStackSynthesizer } from 'aws-cdk-lib';
-import { Vpc, SubnetType, GatewayVpcEndpointAwsService, InterfaceVpcEndpointAwsService } from 'aws-cdk-lib/aws-ec2';
 import { Cluster } from 'aws-cdk-lib/aws-ecs';
 import { Bucket, IBucket } from 'aws-cdk-lib/aws-s3';
+import { Stack, StackProps, CfnOutput, Tags, DefaultStackSynthesizer } from 'aws-cdk-lib';
+import { Vpc, SubnetType, GatewayVpcEndpointAwsService, InterfaceVpcEndpointAwsService } from 'aws-cdk-lib/aws-ec2';
 
 export interface ScotusticianSharedStackProps extends StackProps {
   awsIamArn: string;
