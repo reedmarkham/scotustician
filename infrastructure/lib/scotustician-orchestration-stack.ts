@@ -2,8 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
 import * as stepfunctionstasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
@@ -94,14 +92,22 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.costBaseline',
     });
 
-    const runIngestTask = new stepfunctionstasks.EcsRunTask(this, 'RunIngestTask', {
+    const runIngestTask = new stepfunctionstasks.CallAwsService(this, 'RunIngestTask', {
+      service: 'ecs',
+      action: 'runTask',
       integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
-      cluster: ecs.Cluster.fromClusterArn(this, 'IngestCluster', props.ingestClusterArn),
-      taskDefinition: ecs.FargateTaskDefinition.fromFargateTaskDefinitionArn(this, 'IngestTaskDef', props.ingestTaskDefinitionArn) as ecs.TaskDefinition,
-      launchTarget: new stepfunctionstasks.EcsFargateLaunchTarget({
-        platformVersion: ecs.FargatePlatformVersion.LATEST,
-      }),
-      subnets: { subnetType: ec2.SubnetType.PUBLIC },
+      parameters: {
+        Cluster: props.ingestClusterArn,
+        TaskDefinition: props.ingestTaskDefinitionArn,
+        LaunchType: 'FARGATE',
+        NetworkConfiguration: {
+          AwsvpcConfiguration: {
+            Subnets: props.publicSubnetIds,
+            AssignPublicIp: 'ENABLED',
+          },
+        },
+      },
+      iamResources: ['*'],
       resultPath: '$.ingestResult',
     });
 
