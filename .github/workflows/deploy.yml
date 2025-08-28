@@ -1,4 +1,4 @@
-name: Deploy scotustician infrastructure and services
+name: CI/CD pipeline
 
 on:
   push:

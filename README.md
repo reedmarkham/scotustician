@@ -1,12 +1,11 @@
 # scotustician
 
-[![CI/CD)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml/badge.svg)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
+[![CI/CD](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml/badge.svg)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 
-**scotustician** is a collection of services used to apply data science - particularly visualizing the results of unsupervised clustering over large text embeddings - to Supreme Court of the United States oral argument (OA) transcripts using AWS infrastructure and GitHub Actions to handle CI/CD across the various services: data ingestion, embedding computation, clustering processing, and visualization UI. The motivation for this approach is to better understand the Court by measuring and showing the semantic distance among all available cases' respective oral argument sessions. This repository also includes AWS CDK stacks to provision the underlying infrastructure for all services involved.
+**scotustician** is a collection of services used to apply data science - particularly visualizing the results of unsupervised clustering over large text embeddings - to Supreme Court of the United States oral argument (OA) transcripts using AWS infrastructure and GitHub Actions to handle CI/CD across the various services: data ingestion, embedding computation, clustering processing, and visualization UI. The motivation for this approach is to better understand the Court by measuring and showing the semantic distance among all available cases' respective oral argument sessions. This repository also includes AWS CDK stacks to provision the underlying infrastructure for all services involved. To start generating embeddings I have chosen without much (any) evaluation to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d embeddings and is well-regarded on Hugging Face for tasks such as information retrieval. Future research can implement and evaluate multiple models for the clustering task, as well as regressions for justice votes and other applications in the realm of legal studies.
 
 [Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system to enable data-driven interaction with SCOTUS OA transcripts rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
 
-The embeddings from this pipeline support downstream tasks such as semantic search, clustering, and interactive visualization. I have chosen to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d text embeddings, due to its strong reputation for similar tasks such as semantic retrieval.
 
 ## Pipeline Orchestration
 
