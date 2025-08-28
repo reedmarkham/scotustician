@@ -80,16 +80,20 @@ For granular control, run individual pipeline components using the scripts in [`
    - Deployed automatically via GitHub Actions to AWS ECS
    - Access via URL in [deployment summary](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 
-5. **Storage** - [PostgreSQL with pgvector extension](https://www.github.com/reedmarkham/scotustician-db) for embeddings (deployed separately)
+5. **Database** - PostgreSQL with pgvector extension for embeddings and dbt for analytics (integrated in shared stack)
 
 ```
 scotustician/
 ├── services/          	# Application services
 │   ├── ingest/       	# Python code to ingest raw data from Oyez.org API to S3
 │   ├── transformers/ 	# Python code to generate and store text embeddings in PostgreSQL
-│   └── clustering/    	# Python code to perform case-level clustering analysis on embeddings
-├── infrastructure/     # AWS CDK code defining ECS services and other infrastructure for deployment using subdirectories above 
-└── .github/workflows/ 	# CI/CD pipelines via GitHub Actions to handle AWS CDK workflow, reading in secrets from repository as needed
+│   ├── clustering/    	# Python code to perform case-level clustering analysis on embeddings
+│   └── visualization/  # Streamlit web app for exploring clustering results
+├── database/          	# Database infrastructure and analytics
+│   ├── lambda/        	# Database initialization functions
+│   └── dbt/           	# Data transformation models (bronze/silver/gold)
+├── infrastructure/     # AWS CDK code defining all infrastructure components
+└── .github/workflows/ 	# CI/CD pipelines via GitHub Actions
 ```
 
 After tasks complete, the S3 bucket looks like:
@@ -109,11 +113,9 @@ You will need the ARN, access key, and secret access key for an existing AWS IAM
 
 > To-do: define and manage this IAM user in a separate CDK repository.
 
-### 2. Deploy `scotustician-db`
+### 2. Database Infrastructure
 
-Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors). The database schema required by the transformers service is created during the scotustician-db deployment.
-
-PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack. The database host and secret name are configured via CDK context parameters.
+The PostgreSQL database with pgvector extension is automatically deployed as part of the shared stack. Database schema initialization and dbt analytics models are included. PostgreSQL credentials are managed through AWS Secrets Manager.
 
 ### 3. (Optional) Request GPU Instance Quota
 
@@ -156,42 +158,6 @@ Cases with multiple attorneys or amicus participants may have additional section
 - **Amicus Arguments**: Third-party advocates in cases of broad public interest
 
 Each section represents a natural break when attorneys change at the podium, making section-based embedding generation an intuitive choice for preserving the logical flow of legal arguments. Sections typically range from 1,300-5,500 tokens, optimal for modern embedding models.
-
-## Prerequisites
-
-### 1. AWS IAM Credentials
-
-You will need the ARN, access key, and secret access key for an existing AWS IAM user with permissions defined in [`iam-sample.json`](iam-sample.json). This user is used to authenticate CDK deployments via GitHub Actions.
-
-### 2. Deploy `scotustician-db`
-
-Make sure [`scotustician-db`](https://github.com/reedmarkham/scotustician-db) is deployed first. This provides the S3 and PostgreSQL infrastructure for storage and indexing (via pgvector, up to 2000d vectors). The database schema required by the transformers service is created during the scotustician-db deployment.
-
-PostgreSQL credentials are managed through AWS Secrets Manager and deployed within the above repository's CDK stack.
-
-### 3. (Optional) Request GPU Instance Quota
-
-If you want to use GPU acceleration for transformer tasks, request a service quota increase:
-
-1. Navigate to [AWS Service Quotas](https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas)
-2. Search for **"Running On-Demand G and VT instances"**
-3. Request at least 1-2 instances (g4dn.xlarge uses 4 vCPUs)
-4. Wait for approval (typically a few hours for small increases)
-
-The pipeline will automatically fall back to CPU if GPU quota is not available.
-
-### 4. Set GitHub Repository Secrets
-
-Configure these repository secrets in **GitHub > Settings > Secrets and variables > Actions > Repository secrets**:
-
-| Secret Name         | Description                     | Example Value                                      |
-|---------------------|----------------------------------|----------------------------------------------------|
-| `AWS_ACCOUNT_ID`    | AWS account ID                  | `123456789012`                                     |
-| `AWS_REGION`        | AWS region                      | `us-east-1`                                        |
-| `AWS_IAM_ARN`       | IAM user's ARN                  | `arn:aws:iam::123456789012:user/github-actions`    |
-| `AWS_ACCESS_KEY_ID` | IAM user's access key           | `AKIAIOSFODNN7EXAMPLE`                             |
-| `AWS_SECRET_ACCESS_KEY` | IAM user's secret access key | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`         |
-| `S3_BUCKET`         | S3 bucket name (optional)       | `scotustician`                                     |
 
 ## Bootstrap the CDK Environment
 
@@ -242,12 +208,18 @@ For detailed instructions on running data ingestion and transformation tasks, se
 
 The project deploys six AWS CDK stacks via GitHub Actions:
 
-1. **ScotusticianSharedStack** - VPC, ECS clusters, and networking
+1. **ScotusticianSharedStack** - VPC, ECS clusters, PostgreSQL database, and dbt infrastructure
 2. **ScotusticianIngestStack** - ECS task definition for data ingestion
 3. **ScotusticianTransformersStack** - AWS Batch for embedding generation
 4. **ScotusticianClusteringStack** - AWS Batch for clustering analysis
 5. **ScotusticianVisualizationStack** - ECS service for Streamlit web app
 6. **ScotusticianOrchestrationStack** - Step Functions workflow with Lambda functions for cost tracking and data verification
+
+**Database Components (in shared stack):**
+- PostgreSQL 16.4 with pgvector extension for embeddings storage
+- Automated schema initialization via Lambda
+- dbt on ECS Fargate for weekly analytics transformations
+- Bronze/Silver/Gold medallion architecture for data analytics
 
 ## CI/CD
 

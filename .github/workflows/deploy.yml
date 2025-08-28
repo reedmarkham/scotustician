@@ -30,6 +30,7 @@ jobs:
           filters: |
             shared:
               - 'infrastructure/**'
+              - 'database/**'
               - '.github/workflows/**'
             ingest:
               - 'infrastructure/**'
@@ -38,10 +39,12 @@ jobs:
             transformers:
               - 'infrastructure/**'
               - 'services/transformers/**'
+              - 'database/**'
               - '.github/workflows/**'
             clustering:
               - 'infrastructure/**'
               - 'services/clustering/**'
+              - 'database/**'
               - '.github/workflows/**'
             visualization:
               - 'infrastructure/**'
@@ -49,6 +52,7 @@ jobs:
               - '.github/workflows/**'
             orchestration:
               - 'infrastructure/**'
+              - 'database/**'
               - '.github/workflows/**'
 
   deploy_shared:
@@ -59,6 +63,18 @@ jobs:
       stack_name: "ScotusticianSharedStack"
       outputs_file: "cdk-outputs-shared.json"
       gpu_quota_check: true
+    secrets:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  deploy_db:
+    needs: deploy_shared
+    if: always()
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack_name: "ScotusticianDbStack"
+      outputs_file: "cdk-outputs-db.json"
     secrets:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -80,11 +96,12 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   deploy_transformers:
-    needs: [plan, deploy_shared, deploy_ingest]
+    needs: [plan, deploy_shared, deploy_db, deploy_ingest]
     if: |
       always() && 
       needs.plan.outputs.deploy_transformers == 'true' && 
       (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_db.result == 'success' || needs.deploy_db.result == 'skipped') &&
       (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped')
     uses: ./.github/workflows/_deploy-stack.yml
     with:

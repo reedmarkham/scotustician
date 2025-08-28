@@ -1,0 +1,47 @@
+name: 'scotustician'
+version: '1.0.0'
+config-version: 2
+
+profile: 'scotustician'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["data"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  scotustician:
+    +persist_docs:
+      relation: true
+      columns: true
+    bronze:
+      +materialized: view
+      +schema: bronze
+    silver:
+      +materialized: view
+      +schema: silver
+    gold:
+      +materialized: table
+      +schema: gold
+      oral_arguments:
+        +materialized: table
+        +indexes:
+          - columns: ['case_id']
+          - columns: ['oa_id']
+          - columns: ['created_at']
+      embeddings:
+        +materialized: table
+        +indexes:
+          - columns: ['case_id']
+          - columns: ['created_at']
+
+vars:
+  # Variables that can be overridden at runtime
+  start_date: '2020-01-01'
+  end_date: '2024-12-31'

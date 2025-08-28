@@ -1,0 +1,15 @@
+scotustician:
+  outputs:
+    prod:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      pass: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DATABASE') }}"
+      schema: scotustician
+      threads: 4
+      keepalives_idle: 0
+      search_path: [scotustician, public]
+      
+  target: prod

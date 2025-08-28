@@ -1,0 +1,94 @@
+version: 2
+
+sources:
+  - name: scotustician
+    database: scotustician
+    schema: scotustician
+    description: "Raw Supreme Court oral argument data"
+    tables:
+      - name: transcript_embeddings
+        description: "Vector embeddings for transcript segments"
+        columns:
+          - name: id
+            description: "Primary key"
+            tests:
+              - not_null
+              - unique
+          - name: case_id
+            description: "Case identifier"
+            tests:
+              - not_null
+          - name: text
+            description: "Text content that was embedded"
+            tests:
+              - not_null
+          - name: vector
+            description: "pgvector embedding (4096 dimensions)"
+          - name: case_name
+            description: "Name of the case"
+          - name: term
+            description: "Supreme Court term"
+          - name: created_at
+            description: "Timestamp of record creation"
+            tests:
+              - not_null
+
+      - name: oa_text
+        description: "Oral argument text utterances"
+        columns:
+          - name: id
+            description: "Primary key"
+            tests:
+              - not_null
+              - unique
+          - name: case_id
+            description: "Case identifier"
+            tests:
+              - not_null
+          - name: oa_id
+            description: "Oral argument identifier"
+            tests:
+              - not_null
+          - name: utterance_index
+            description: "Sequential index of utterance"
+            tests:
+              - not_null
+          - name: speaker_name
+            description: "Name of the speaker"
+            tests:
+              - not_null
+          - name: text
+            description: "Text of the utterance"
+            tests:
+              - not_null
+          - name: created_at
+            description: "Timestamp of record creation"
+
+      - name: document_chunk_embeddings
+        description: "Embeddings for document chunks"
+        columns:
+          - name: id
+            description: "Primary key"
+            tests:
+              - not_null
+              - unique
+          - name: case_id
+            description: "Case identifier"
+            tests:
+              - not_null
+          - name: oa_id
+            description: "Oral argument identifier"
+            tests:
+              - not_null
+          - name: section_id
+            description: "Section identifier within document"
+            tests:
+              - not_null
+          - name: chunk_text
+            description: "Text content of the chunk"
+            tests:
+              - not_null
+          - name: vector
+            description: "pgvector embedding (1024 dimensions)"
+            tests:
+              - not_null
