@@ -111,7 +111,6 @@ jobs:
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianVisualizationStack"
-      outputs_file: "cdk-outputs-visualization.json"
     secrets: inherit
 
   deploy_orchestration:
