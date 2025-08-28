@@ -119,7 +119,7 @@ jobs:
 
   deploy_db:
     needs: deploy_shared
-    if: always()
+    if: needs.deploy_shared.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

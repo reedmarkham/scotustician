@@ -283,7 +283,20 @@ export class ScotusticianOrchestrationStack extends Stack {
     //
     // Definition
     //
-    const definition = extractInputParams
+    // Manual approval step: Wait for human approval via callback
+    const approvalWait = new Wait(this, 'ManualApproval', {
+      time: WaitTime.timestampPath('$.approvalTimestamp'), // Placeholder, will be overridden by callback
+    });
+
+    // Optionally, send an SNS notification to alert for approval (can be expanded to Lambda, etc.)
+    // You can use a LambdaInvoke to send a notification if you want a custom message or workflow.
+
+    // To use the callback pattern, you would use a custom Lambda or API Gateway to call SendTaskSuccess.
+    // For simplicity, this Wait state can be replaced with a Task state using callback if you want a true approval pattern.
+
+    // Insert approvalWait at the start of the workflow
+    const definition = approvalWait
+      .next(extractInputParams)
       .next(costBaselineTask)
       .next(startIngestTask)
       .next(waitForIngestCompletion)

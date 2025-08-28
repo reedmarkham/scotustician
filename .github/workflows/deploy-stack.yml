@@ -126,7 +126,9 @@ jobs:
       - name: Pre-deployment validation
         run: |
           cd infrastructure
-          npx cdk synth ${{ inputs.stack_name }} > /dev/null
+          npx cdk synth ${{ inputs.stack_name }} \
+            --context awsIamArn=${{ secrets.AWS_IAM_ARN }} \
+            --context bootstrapQualifier=$BOOTSTRAP_QUALIFIER > /dev/null
           
           if aws cloudformation describe-stacks --stack-name ${{ inputs.stack_name }} >/dev/null 2>&1; then
             echo "Checking for stack drift..."
