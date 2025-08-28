@@ -250,7 +250,7 @@ export class ScotusticianVisualizationStack extends Stack {
     this.ecsService = new ecs.Ec2Service(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
-      desiredCount: 0, // Scale to zero for cost savings
+      desiredCount: 1, // Keep at least one instance running
       capacityProviderStrategies: [
         {
           capacityProvider: capacityProvider.capacityProviderName,
