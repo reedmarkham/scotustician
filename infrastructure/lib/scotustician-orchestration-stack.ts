@@ -142,9 +142,8 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       )
       .otherwise(waitBeforeRetry);
 
-    // Create the polling loop
+    // Create the polling loop  
     waitBeforeRetry.next(checkIngestTaskStatus);
-    checkIngestTaskStatus.next(evaluateIngestTaskStatus);
 
     const verifyS3DataTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
@@ -232,10 +231,14 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Definition
     //
+    // Connect the successful path to continue the pipeline
+    const ingestTaskSuccess = evaluateIngestTaskStatus.afterwards();
+    
     const definition = costBaselineTask
       .next(startIngestTask)
       .next(checkIngestTaskStatus)
-      .next(evaluateIngestTaskStatus.afterwards()
+      .next(evaluateIngestTaskStatus)
+      .next(ingestTaskSuccess
         .next(verifyS3DataTask)
         .next(s3DataCheck.afterwards()
           .next(verifyEmbeddingsTask)
