@@ -56,6 +56,38 @@ jobs:
 
       - run: cd infrastructure && npm ci
 
+      - name: Handle dependent stack exports
+        if: ${{ inputs.stack_name == 'ScotusticianIngestStack' }}
+        run: |
+          echo "Checking for dependent stacks that use ingest exports..."
+          
+          # Define dependent stacks in deletion order (reverse dependency order)
+          DEPENDENT_STACKS=("ScotusticianOrchestrationStack" "ScotusticianClusteringStack" "ScotusticianTransformersStack")
+          
+          # Check if any dependent stacks exist and delete them
+          STACKS_TO_REDEPLOY=()
+          
+          for stack in "${DEPENDENT_STACKS[@]}"; do
+            STACK_STATUS=$(aws cloudformation describe-stacks \
+              --stack-name $stack \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+            
+            if [[ "$STACK_STATUS" != "DOES_NOT_EXIST" ]]; then
+              echo "Found dependent stack: $stack (status: $STACK_STATUS)"
+              STACKS_TO_REDEPLOY+=($stack)
+              
+              echo "Deleting $stack to allow ingest stack update..."
+              aws cloudformation delete-stack --stack-name $stack
+              
+              echo "Waiting for $stack deletion to complete..."
+              aws cloudformation wait stack-delete-complete --stack-name $stack
+              echo "$stack deleted successfully"
+            fi
+          done
+          
+          # Store list of stacks to redeploy for later steps
+          echo "STACKS_TO_REDEPLOY=${STACKS_TO_REDEPLOY[*]}" >> $GITHUB_ENV
+
       - name: Enhanced rollback recovery
         run: |
           STACK_NAME="${{ inputs.stack_name }}"
@@ -260,4 +292,34 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
+
+      - name: Redeploy dependent stacks
+        if: ${{ inputs.stack_name == 'ScotusticianIngestStack' && env.STACKS_TO_REDEPLOY != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Redeploying stacks that were deleted: $STACKS_TO_REDEPLOY"
+          
+          # Convert space-separated string back to array
+          IFS=' ' read -ra STACKS_ARRAY <<< "$STACKS_TO_REDEPLOY"
+          
+          # Redeploy stacks directly using this workflow
+          for ((i=${#STACKS_ARRAY[@]}-1; i>=0; i--)); do
+            stack="${STACKS_ARRAY[i]}"
+            echo "Deploying $stack..."
+            
+            # Deploy stack directly using CDK
+            cd infrastructure
+            npx cdk deploy $stack \
+              --context @aws-cdk:bootstrap-qualifier=$BOOTSTRAP_QUALIFIER \
+              --toolkit-stack-name $TOOLKIT_STACK \
+              --context awsIamArn=${{ secrets.AWS_IAM_ARN }} \
+              --require-approval never \
+              --method direct \
+              --progress events
+            
+            echo "$stack redeployed successfully"
+          done
+          
+          echo "All dependent stacks redeployed successfully"
 
