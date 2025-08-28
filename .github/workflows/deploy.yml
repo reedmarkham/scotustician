@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy_shared: ${{ steps.filter.outputs.shared }}
+      deploy_db: ${{ steps.filter.outputs.db }}
       deploy_ingest: ${{ steps.filter.outputs.ingest }}
       deploy_transformers: ${{ steps.filter.outputs.transformers }}
       deploy_clustering: ${{ steps.filter.outputs.clustering }}
@@ -36,6 +37,10 @@ jobs:
           filters: |
             shared:
               - 'infrastructure/**'
+              - 'database/**'
+              - '.github/workflows/**'
+            db:
+              - 'infrastructure/lib/scotustician-db-stack.ts'
               - 'database/**'
               - '.github/workflows/**'
             ingest:
@@ -118,8 +123,8 @@ jobs:
     secrets: inherit
 
   deploy_db:
-    needs: deploy_shared
-    if: needs.deploy_shared.result == 'success'
+    needs: [plan, deploy_shared]
+    if: needs.plan.outputs.deploy_db == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
