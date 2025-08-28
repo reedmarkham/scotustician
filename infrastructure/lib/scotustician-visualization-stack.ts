@@ -112,7 +112,7 @@ export class ScotusticianVisualizationStack extends Stack {
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.LOWEST_PRICE,
-          spotMaxPrice: '0.10', // Maximum spot price per hour
+          spotMaxPrice: '0.03', // Maximum spot price per hour
         },
         launchTemplateOverrides: [
           { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL) },
@@ -230,12 +230,12 @@ export class ScotusticianVisualizationStack extends Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
       targetType: elbv2.TargetType.INSTANCE,
       healthCheck: {
-        path: '/',
+        path: '/_stcore/health',
         healthyHttpCodes: '200',
         interval: Duration.seconds(30),
-        timeout: Duration.seconds(5),
+        timeout: Duration.seconds(10),
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
+        unhealthyThresholdCount: 5,
       },
     });
 
@@ -267,22 +267,22 @@ export class ScotusticianVisualizationStack extends Stack {
       serviceNamespace: applicationautoscaling.ServiceNamespace.ECS,
       scalableDimension: 'ecs:service:DesiredCount',
       resourceId: `service/${cluster.clusterName}/${this.ecsService.serviceName}`,
-      minCapacity: 0,
+      minCapacity: 1, // Always keep at least one instance running
       maxCapacity: 3,
     });
 
-    // Add scaling policy that responds to any ALB traffic
+    // Add scaling policy that responds to ALB traffic - more conservative scaling
     scalableTarget.scaleOnMetric('VisualizationRequestScaling', {
       metric: targetGroup.metricRequestCount({
         statistic: 'Sum',
       }),
       scalingSteps: [
-        { upper: 0, change: -1 },   // Scale down if no requests
-        { lower: 1, change: +1 },   // Scale up if any requests  
+        { upper: 10, change: 0 },   // No change for low traffic
+        { lower: 50, change: +1 },  // Scale up for higher traffic
       ],
       adjustmentType: applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
-      cooldown: Duration.seconds(60),
-      evaluationPeriods: 1, // React quickly to traffic
+      cooldown: Duration.seconds(300), // 5 minute cooldown for stability
+      evaluationPeriods: 2, // More stable evaluation
     });
 
     this.loadBalancerDnsName = loadBalancer.loadBalancerDnsName;
