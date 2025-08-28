@@ -178,13 +178,14 @@ export class ScotusticianVisualizationStack extends Stack {
       defaultTargetGroups: [targetGroup],
     });
 
-    // Create Fargate service with auto-scaling
+    // Create Fargate service with auto-scaling - use public subnets for cost optimization
     this.ecsService = new FargateService(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1, // Start with one instance
-      vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+      vpcSubnets: { subnetType: SubnetType.PUBLIC },
       securityGroups: [ecsSecurityGroup],
+      assignPublicIp: true, // Required for Fargate in public subnets
     });
 
     // Attach service to target group

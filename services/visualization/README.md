@@ -98,7 +98,7 @@ s3://bucket/analysis/case-clustering-by-term/
 ### Resource Configuration
 - **Fargate Resources**: 0.25 vCPU, 512 MB memory (equivalent to t3.micro)
 - **Cost**: ~$0.01/hour when running, $0 when scaled to zero
-- **Network**: Private subnets with NAT gateway for security
+- **Network**: Public subnets for cost optimization (saves ~$45-90/month vs NAT gateway)
 - **Storage**: No persistent storage required - reads directly from S3
 
 ### Auto-scaling Behavior
