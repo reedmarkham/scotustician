@@ -219,7 +219,8 @@ export class ScotusticianVisualizationStack extends Stack {
         period: Duration.minutes(60), // 1 hour window
       }),
       scalingSteps: [
-        { upper: 1, change: -1 }, // If less than 1 request in 1 hour, scale down by 1
+        { upper: 0, change: -1 }, // If 0 requests in 1 hour, scale down by 1
+        { lower: 1, upper: 5, change: 0 }, // If 1-5 requests, no change
       ],
       adjustmentType: AdjustmentType.CHANGE_IN_CAPACITY,
       cooldown: Duration.minutes(60),
@@ -237,7 +238,8 @@ export class ScotusticianVisualizationStack extends Stack {
       metricValue: '1',
     });
 
-    const taskStartupMetricFilter = new MetricFilter(this, 'TaskStartupMetricFilter', {
+    // Task startup metric filter for future monitoring
+    new MetricFilter(this, 'TaskStartupMetricFilter', {
       logGroup: ecsLogGroup,
       metricNamespace: 'Scotustician/Visualization',
       metricName: 'TaskStartups',
