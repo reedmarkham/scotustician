@@ -10,7 +10,7 @@ import {
 } from 'aws-cdk-lib';
 import {
   StateMachine, StateMachineType, TaskInput, Condition, Wait, WaitTime, Pass,
-  Choice, Fail, Parallel, IntegrationPattern, LogLevel
+  Choice, Fail, Parallel, IntegrationPattern, LogLevel, DefinitionBody
 } from 'aws-cdk-lib/aws-stepfunctions';
 import {
   LambdaInvoke, CallAwsService, BatchSubmitJob
@@ -312,7 +312,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     // State Machine
     //
     this.stateMachine = new StateMachine(this, 'ScotusticianPipeline', {
-      definition,
+      definitionBody: DefinitionBody.fromChainable(definition),
       stateMachineType: StateMachineType.STANDARD,
       timeout: Duration.hours(6),
       logs: {
