@@ -20,7 +20,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import { CfnResourcePolicy } from 'aws-cdk-lib/aws-secretsmanager';
 import { 
-  Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret as EcsSecret, FargatePlatformVersion 
+  Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret as EcsSecret, FargatePlatformVersion, ContainerInsights 
 } from 'aws-cdk-lib/aws-ecs';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { EcsTask } from 'aws-cdk-lib/aws-events-targets';
@@ -160,7 +160,10 @@ export class ScotusticianDbStack extends Stack {
       environment: {
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
       },
-      logRetention: RetentionDays.ONE_WEEK,
+      logGroup: new LogGroup(this, 'DbInitFunctionLogGroup', {
+        retention: RetentionDays.ONE_WEEK,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
     });
 
     // Grant permissions to Lambda function
@@ -222,7 +225,10 @@ export class ScotusticianDbStack extends Stack {
     // Custom resource to trigger database initialization
     const dbInitProvider = new Provider(this, 'DbInitProvider', {
       onEventHandler: dbInitFunction,
-      logRetention: RetentionDays.ONE_WEEK,
+      logGroup: new LogGroup(this, 'DbInitProviderLogGroup', {
+        retention: RetentionDays.ONE_WEEK,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
     });
 
     const dbInitResource = new CustomResource(this, 'DbInitResource', {
@@ -248,7 +254,7 @@ export class ScotusticianDbStack extends Stack {
   const ecsCluster = new Cluster(this, 'DbtEcsCluster', {
       vpc,
       clusterName: 'scotustician-dbt-cluster',
-      containerInsights: true,
+      containerInsightsV2: ContainerInsights.ENABLED,
     });
 
     // Create CloudWatch Log Group for dbt
@@ -293,7 +299,7 @@ export class ScotusticianDbStack extends Stack {
     });
 
     // Add container to task definition
-    const dbtContainer = dbtTaskDefinition.addContainer('dbt-container', {
+    dbtTaskDefinition.addContainer('dbt-container', {
       image: ContainerImage.fromDockerImageAsset(dbtImage),
       logging: LogDrivers.awsLogs({
         streamPrefix: 'dbt',

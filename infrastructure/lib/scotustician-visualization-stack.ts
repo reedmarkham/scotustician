@@ -9,7 +9,7 @@ import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ApplicationLoadBalancer, ApplicationTargetGroup, ApplicationProtocol, TargetType } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { ScalableTarget, ServiceNamespace, AdjustmentType } from 'aws-cdk-lib/aws-applicationautoscaling';
 import { 
-  Cluster, FargateService, Ec2Service, AsgCapacityProvider, EcsOptimizedImage, Protocol, Ec2TaskDefinition, NetworkMode, ContainerImage, LogDrivers 
+  Cluster, Ec2Service, AsgCapacityProvider, EcsOptimizedImage, Protocol, Ec2TaskDefinition, NetworkMode, ContainerImage, LogDrivers, ContainerInsights 
 } from 'aws-cdk-lib/aws-ecs';
 import { 
   IVpc, SecurityGroup, Peer, Port, LaunchTemplate, InstanceType, InstanceClass, InstanceSize, SubnetType, UserData 
@@ -76,7 +76,7 @@ export class ScotusticianVisualizationStack extends Stack {
     const cluster = new Cluster(this, 'VisualizationCluster', {
       vpc: props.vpc,
       clusterName: 'scotustician-visualization',
-      containerInsights: true,
+      containerInsightsV2: ContainerInsights.ENABLED,
     });
 
     // Create instance role for ECS instances
@@ -140,7 +140,6 @@ export class ScotusticianVisualizationStack extends Stack {
       autoScalingGroup: asg,
       enableManagedScaling: true,
       enableManagedTerminationProtection: false,
-      canContainersAccessInstanceRole: true,
     });
     cluster.addAsgCapacityProvider(capacityProvider);
 
@@ -190,7 +189,7 @@ export class ScotusticianVisualizationStack extends Stack {
     });
 
     // Add container to task definition
-    const container = taskDefinition.addContainer('visualization', {
+    taskDefinition.addContainer('visualization', {
       image: ContainerImage.fromDockerImageAsset(image),
       memoryLimitMiB: memoryLimitMiB,
       cpu: cpu,
@@ -245,7 +244,7 @@ export class ScotusticianVisualizationStack extends Stack {
     });
 
     // Create listener
-    const listener = loadBalancer.addListener('VisualizationListener', {
+    loadBalancer.addListener('VisualizationListener', {
       port: 80,
       protocol: ApplicationProtocol.HTTP,
       defaultTargetGroups: [targetGroup],
@@ -278,7 +277,7 @@ export class ScotusticianVisualizationStack extends Stack {
 
     // Add scaling policy that responds to ALB traffic - more conservative scaling
     scalableTarget.scaleOnMetric('VisualizationRequestScaling', {
-      metric: targetGroup.metricRequestCount({
+      metric: targetGroup.metrics.requestCount({
         statistic: 'Sum',
       }),
       scalingSteps: [
