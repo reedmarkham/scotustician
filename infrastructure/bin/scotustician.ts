@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { ScotusticianSharedStack } from '../lib/scotustician-shared-stack';
+import { ScotusticianSharedStack, ScotusticianSharedStackProps } from '../lib/scotustician-shared-stack';
 import { ScotusticianDbStack } from '../lib/scotustician-db-stack';
 import { ScotusticianIngestStack } from '../lib/scotustician-ingest-stack';
 import { ScotusticianTransformersStack } from '../lib/scotustician-transformers-stack';
@@ -17,11 +17,21 @@ const env = {
 const app = new cdk.App();
 
 
-const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', { env });
+
+const awsIamArn = app.node.tryGetContext('awsIamArn') || process.env.AWS_IAM_ARN;
+if (!awsIamArn) {
+  throw new Error('AWS_IAM_ARN must be provided as a context variable or environment variable');
+}
+
+const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', {
+  env,
+  awsIamArn,
+});
 
 // Deploy DB stack after shared, using the same VPC
 const db = new ScotusticianDbStack(app, 'ScotusticianDbStack', {
   env,
+  awsIamArn: shared.awsIamArn,
   // vpc: shared.vpc, // Uncomment if your constructor supports passing VPC
 });
 

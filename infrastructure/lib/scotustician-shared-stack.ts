@@ -3,20 +3,24 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
 
+export interface ScotusticianSharedStackProps extends cdk.StackProps {
+  awsIamArn: string;
+}
+
 export class ScotusticianSharedStack extends cdk.Stack {
+  public readonly awsIamArn: string;
   public readonly vpc: ec2.Vpc;
   public readonly ingestCluster: ecs.Cluster;
   public readonly cpuCluster: ecs.Cluster;
   public readonly transformersGpuCluster?: ecs.Cluster;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
-    const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
-    const useGpu = scope.node.tryGetContext('useGpu') === 'true';
+  constructor(scope: Construct, id: string, props: ScotusticianSharedStackProps) {
+    super(scope, id, props);
+    this.awsIamArn = props.awsIamArn;
 
-    super(scope, id, {
-      ...props,
-      synthesizer: new cdk.DefaultStackSynthesizer({ qualifier }),
-    });
+  const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
+  const useGpu = scope.node.tryGetContext('useGpu') === 'true';
+  // ...existing code...
 
     // Apply resource tags to entire stack
     cdk.Tags.of(this).add('Project', 'scotustician');

@@ -15,8 +15,12 @@ import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 import * as path from 'path';
 
+export interface ScotusticianDbStackProps extends cdk.StackProps {
+  awsIamArn: string;
+}
+
 export class ScotusticianDbStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: ScotusticianDbStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
 
     super(scope, id, {
@@ -24,9 +28,9 @@ export class ScotusticianDbStack extends cdk.Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    const scotusticianUserArn = this.node.tryGetContext('awsIamArn');
+    const scotusticianUserArn = props.awsIamArn;
     if (!scotusticianUserArn) {
-      throw new Error('Environment variable AWS_IAM_ARN must be defined');
+      throw new Error('awsIamArn prop must be defined');
     }
 
     const scotusticianBucket = s3.Bucket.fromBucketName(
