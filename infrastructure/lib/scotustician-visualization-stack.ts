@@ -2,17 +2,19 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags, Duration } from 'aws-cdk-lib';
-import { AutoScalingGroup, SpotAllocationStrategy } from 'aws-cdk-lib/aws-autoscaling';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
-import { Role, ServicePrincipal, ManagedPolicy, InstanceProfile, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
-import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { LogGroup, RetentionDays, MetricFilter, FilterPattern } from 'aws-cdk-lib/aws-logs';
+import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
+import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
+import { Topic } from 'aws-cdk-lib/aws-sns';
 import { ApplicationLoadBalancer, ApplicationTargetGroup, ApplicationProtocol, TargetType } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import { ScalableTarget, ServiceNamespace, AdjustmentType } from 'aws-cdk-lib/aws-applicationautoscaling';
+import { ScalableTarget, ServiceNamespace, AdjustmentType, TargetTrackingScalingPolicy } from 'aws-cdk-lib/aws-applicationautoscaling';
 import { 
-  Cluster, Ec2Service, AsgCapacityProvider, EcsOptimizedImage, Protocol, Ec2TaskDefinition, NetworkMode, ContainerImage, LogDrivers, ContainerInsights 
+  Cluster, FargateService, FargateTaskDefinition, ContainerImage, LogDrivers, ContainerInsights 
 } from 'aws-cdk-lib/aws-ecs';
 import { 
-  IVpc, SecurityGroup, Peer, Port, LaunchTemplate, InstanceType, InstanceClass, InstanceSize, SubnetType, UserData 
+  IVpc, SecurityGroup, Peer, Port, SubnetType 
 } from 'aws-cdk-lib/aws-ec2';
 
 export interface ScotusticianVisualizationStackProps extends StackProps {
@@ -21,7 +23,7 @@ export interface ScotusticianVisualizationStackProps extends StackProps {
 
 export class ScotusticianVisualizationStack extends Stack {
   public readonly loadBalancerDnsName: string;
-  public readonly ecsService: Ec2Service;
+  public readonly ecsService: FargateService;
 
   constructor(scope: Construct, id: string, props: ScotusticianVisualizationStackProps) {
     const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
@@ -31,119 +33,57 @@ export class ScotusticianVisualizationStack extends Stack {
       synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    // Apply resource tags to entire stack
     Tags.of(this).add('Project', 'scotustician');
     Tags.of(this).add('Stack', 'visualization');
 
     const s3BucketName = this.node.tryGetContext('s3BucketName') || 'scotustician';
-    const containerPort = 8501; // Streamlit default port
-    const cpu = 256; // 0.25 vCPU - minimal for cost savings
-    const memoryLimitMiB = 512; // 0.5 GB - minimal for cost savings
+    const containerPort = 8501;
 
-    // Create security group for ALB
+    // Create enhanced CloudWatch log groups
+    const containerLogGroup = new LogGroup(this, 'VisualizationContainerLogGroup', {
+      logGroupName: '/ecs/scotustician-visualization',
+      retention: RetentionDays.TWO_WEEKS,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const ecsLogGroup = new LogGroup(this, 'VisualizationEcsLogGroup', {
+      logGroupName: '/aws/ecs/scotustician-visualization-cluster',
+      retention: RetentionDays.TWO_WEEKS,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // SNS topic for alerts
+    const alertTopic = new Topic(this, 'VisualizationAlerts', {
+      topicName: 'scotustician-visualization-alerts',
+      displayName: 'Visualization Infrastructure Alerts',
+    });
+
+    // Security groups
     const albSecurityGroup = new SecurityGroup(this, 'VisualizationAlbSecurityGroup', {
       vpc: props.vpc,
       allowAllOutbound: true,
       description: 'Security group for visualization ALB',
     });
 
-    albSecurityGroup.addIngressRule(
-      Peer.anyIpv4(),
-      Port.tcp(80),
-      'HTTP access from internet'
-    );
+    albSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(80), 'HTTP access from internet');
+    albSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(443), 'HTTPS access from internet');
 
-    albSecurityGroup.addIngressRule(
-      Peer.anyIpv4(),
-      Port.tcp(443),
-      'HTTPS access from internet'
-    );
-
-    // Create security group for ECS service
     const ecsSecurityGroup = new SecurityGroup(this, 'VisualizationEcsSecurityGroup', {
       vpc: props.vpc,
       allowAllOutbound: true,
       description: 'Security group for visualization ECS service',
     });
 
-    ecsSecurityGroup.addIngressRule(
-      albSecurityGroup,
-      Port.tcp(containerPort),
-      'Access from ALB'
-    );
+    ecsSecurityGroup.addIngressRule(albSecurityGroup, Port.tcp(containerPort), 'Access from ALB');
 
-    // Create ECS cluster for visualization
+    // Create Fargate cluster for simplicity and faster deployment
     const cluster = new Cluster(this, 'VisualizationCluster', {
       vpc: props.vpc,
       clusterName: 'scotustician-visualization',
       containerInsightsV2: ContainerInsights.ENABLED,
     });
 
-    // Create instance role for ECS instances
-    const ecsInstanceRole = new Role(this, 'VisualizationEcsInstanceRole', {
-      assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
-      managedPolicies: [
-        ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
-      ],
-    });
-
-    // Create instance profile for the role
-    const instanceProfile = new InstanceProfile(this, 'VisualizationInstanceProfile', {
-      role: ecsInstanceRole,
-    });
-
-    // Create Launch Template for use with Mixed Instances Policy
-    // Note: spotOptions removed because they conflict with mixedInstancesPolicy
-    const launchTemplate = new LaunchTemplate(this, 'VisualizationLaunchTemplate', {
-      instanceType: InstanceType.of(InstanceClass.T3, InstanceSize.SMALL),
-      machineImage: EcsOptimizedImage.amazonLinux2(),
-      securityGroup: ecsSecurityGroup,
-      userData: UserData.forLinux(),
-      role: ecsInstanceRole,
-    });
-
-    // Add comprehensive ECS cluster configuration to user data
-    launchTemplate.userData?.addCommands(
-      `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`,
-      'echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config',
-      'systemctl enable ecs --now'
-    );
-
-    // Add EC2 capacity provider with spot instances using Mixed Instances Policy
-    const asg = new AutoScalingGroup(this, 'VisualizationSpotASG', {
-      vpc: props.vpc,
-      mixedInstancesPolicy: {
-        launchTemplate: launchTemplate,
-        instancesDistribution: {
-          onDemandPercentageAboveBaseCapacity: 10, // 10% on-demand, 90% spot instances
-          spotAllocationStrategy: SpotAllocationStrategy.LOWEST_PRICE,
-          spotMaxPrice: '0.01', // Maximum spot price per hour
-        },
-        launchTemplateOverrides: [
-          { instanceType: InstanceType.of(InstanceClass.T3, InstanceSize.SMALL) },
-          { instanceType: InstanceType.of(InstanceClass.T3, InstanceSize.MICRO) },
-          { instanceType: InstanceType.of(InstanceClass.T3A, InstanceSize.SMALL) },
-          { instanceType: InstanceType.of(InstanceClass.T3A, InstanceSize.MICRO) },
-        ],
-      },
-      minCapacity: 0,
-      maxCapacity: 2,
-      desiredCapacity: 1,
-      vpcSubnets: {
-        subnetType: SubnetType.PUBLIC,
-        availabilityZones: ['us-east-1a', 'us-east-1b', 'us-east-1c', 'us-east-1d', 'us-east-1f'],
-      },
-      autoScalingGroupName: 'scotustician-visualization-spot-asg',
-    });
-
-    const capacityProvider = new AsgCapacityProvider(this, 'SpotCapacityProvider', {
-      autoScalingGroup: asg,
-      enableManagedScaling: true,
-      enableManagedTerminationProtection: false,
-    });
-    cluster.addAsgCapacityProvider(capacityProvider);
-
-    // Create task execution role
+    // Task execution and task roles
     const taskExecutionRole = new Role(this, 'VisualizationTaskExecutionRole', {
       assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
       managedPolicies: [
@@ -151,63 +91,53 @@ export class ScotusticianVisualizationStack extends Stack {
       ],
     });
 
-    // Create task role with S3 permissions
     const taskRole = new Role(this, 'VisualizationTaskRole', {
       assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
 
-    // Add S3 read permissions for clustering results
+    // Add S3 read permissions
     taskRole.addToPolicy(new PolicyStatement({
       effect: Effect.ALLOW,
-      actions: [
-        's3:GetObject',
-        's3:ListBucket',
-      ],
-      resources: [
-        `arn:aws:s3:::${s3BucketName}`,
-        `arn:aws:s3:::${s3BucketName}/*`,
-      ],
+      actions: ['s3:GetObject', 's3:ListBucket'],
+      resources: [`arn:aws:s3:::${s3BucketName}`, `arn:aws:s3:::${s3BucketName}/*`],
     }));
 
-    // Create CloudWatch log group
-    const logGroup = new LogGroup(this, 'VisualizationLogGroup', {
-      logGroupName: '/ecs/scotustician-visualization',
-      retention: RetentionDays.ONE_WEEK,
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
+    // Add CloudWatch permissions for custom metrics
+    taskRole.addToPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['cloudwatch:PutMetricData'],
+      resources: ['*'],
+    }));
 
-    // Build Docker image from the visualization service
+    // Build Docker image
     const image = new DockerImageAsset(this, 'VisualizationImage', {
       directory: path.join(__dirname, '../../services/visualization'),
     });
 
-    // Create EC2 task definition for spot instances
-    const taskDefinition = new Ec2TaskDefinition(this, 'VisualizationTaskDefinition', {
-      networkMode: NetworkMode.BRIDGE,
+    // Create Fargate task definition for on-demand t3.micro equivalent
+    const taskDefinition = new FargateTaskDefinition(this, 'VisualizationTaskDefinition', {
+      cpu: 256, // 0.25 vCPU (t3.micro equivalent)
+      memoryLimitMiB: 512, // 0.5 GB
       executionRole: taskExecutionRole,
       taskRole: taskRole,
     });
 
-    // Add container to task definition
-    taskDefinition.addContainer('visualization', {
+    // Add container
+    const container = taskDefinition.addContainer('visualization', {
       image: ContainerImage.fromDockerImageAsset(image),
-      memoryLimitMiB: memoryLimitMiB,
-      cpu: cpu,
       logging: LogDrivers.awsLogs({
-        streamPrefix: 'ecs',
-        logGroup: logGroup,
+        streamPrefix: 'visualization-app',
+        logGroup: containerLogGroup,
+        datetimeFormat: '%Y-%m-%d %H:%M:%S',
       }),
       environment: {
         AWS_DEFAULT_REGION: this.region,
         S3_BUCKET: s3BucketName,
       },
-      portMappings: [
-        {
-          containerPort: containerPort,
-          hostPort: 0, // Dynamic port mapping for EC2
-          protocol: Protocol.TCP,
-        },
-      ],
+      portMappings: [{
+        containerPort: containerPort,
+        protocol: 'tcp' as any,
+      }],
       healthCheck: {
         command: ['CMD-SHELL', 'curl -f http://localhost:8501/_stcore/health || exit 1'],
         interval: Duration.seconds(30),
@@ -217,13 +147,11 @@ export class ScotusticianVisualizationStack extends Stack {
       },
     });
 
-    // Create Application Load Balancer in public subnets for cost optimization
+    // Create Application Load Balancer
     const loadBalancer = new ApplicationLoadBalancer(this, 'VisualizationLoadBalancer', {
       vpc: props.vpc,
       internetFacing: true,
-      vpcSubnets: {
-        subnetType: SubnetType.PUBLIC,
-      },
+      vpcSubnets: { subnetType: SubnetType.PUBLIC },
       securityGroup: albSecurityGroup,
     });
 
@@ -232,7 +160,7 @@ export class ScotusticianVisualizationStack extends Stack {
       vpc: props.vpc,
       port: containerPort,
       protocol: ApplicationProtocol.HTTP,
-      targetType: TargetType.INSTANCE,
+      targetType: TargetType.IP, // Fargate uses IP targets
       healthCheck: {
         path: '/_stcore/health',
         healthyHttpCodes: '200',
@@ -250,46 +178,101 @@ export class ScotusticianVisualizationStack extends Stack {
       defaultTargetGroups: [targetGroup],
     });
 
-    // Create EC2 service on spot instances
-    this.ecsService = new Ec2Service(this, 'VisualizationService', {
+    // Create Fargate service with auto-scaling
+    this.ecsService = new FargateService(this, 'VisualizationService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
-      desiredCount: 1, // Keep at least one instance running
-      capacityProviderStrategies: [
-        {
-          capacityProvider: capacityProvider.capacityProviderName,
-          weight: 1,
-        },
-      ],
+      desiredCount: 1, // Start with one instance
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+      securityGroups: [ecsSecurityGroup],
     });
 
     // Attach service to target group
     this.ecsService.attachToApplicationTargetGroup(targetGroup);
 
-    // Configure Application Auto Scaling for ECS service
+    // Configure auto scaling with inactivity scale-down
     const scalableTarget = new ScalableTarget(this, 'VisualizationScalableTarget', {
       serviceNamespace: ServiceNamespace.ECS,
       scalableDimension: 'ecs:service:DesiredCount',
       resourceId: `service/${cluster.clusterName}/${this.ecsService.serviceName}`,
-      minCapacity: 1, // Always keep at least one instance running
+      minCapacity: 0, // Can scale down to zero for cost savings
       maxCapacity: 3,
     });
 
-    // Add scaling policy that responds to ALB traffic - more conservative scaling
-    scalableTarget.scaleOnMetric('VisualizationRequestScaling', {
+    // Target tracking scaling based on ALB requests - scales up on traffic
+    const targetTrackingPolicy = new TargetTrackingScalingPolicy(this, 'RequestCountScaling', {
+      scalingTarget: scalableTarget,
+      targetValue: 10, // Target 10 requests per minute per task
+      customMetric: targetGroup.metrics.requestCount({
+        statistic: 'Sum',
+        period: Duration.minutes(1),
+      }),
+      scaleInCooldown: Duration.minutes(60), // Wait 1 hour before scaling down
+      scaleOutCooldown: Duration.minutes(3), // Quick scale out
+    });
+
+    // Scale down to zero after 1 hour of no requests
+    scalableTarget.scaleOnMetric('InactivityScaleDown', {
       metric: targetGroup.metrics.requestCount({
         statistic: 'Sum',
+        period: Duration.minutes(60), // 1 hour window
       }),
       scalingSteps: [
-        { upper: 10, change: 0 },   // No change for low traffic
-        { lower: 50, change: +1 },  // Scale up for higher traffic
+        { upper: 1, change: -1 }, // If less than 1 request in 1 hour, scale down by 1
       ],
       adjustmentType: AdjustmentType.CHANGE_IN_CAPACITY,
-      cooldown: Duration.seconds(300), // 5 minute cooldown for stability
-      evaluationPeriods: 2, // More stable evaluation
+      cooldown: Duration.minutes(60),
+      evaluationPeriods: 1,
     });
 
     this.loadBalancerDnsName = loadBalancer.loadBalancerDnsName;
+
+    // Enhanced monitoring
+    const errorMetricFilter = new MetricFilter(this, 'ErrorMetricFilter', {
+      logGroup: containerLogGroup,
+      metricNamespace: 'Scotustician/Visualization',
+      metricName: 'ApplicationErrors',
+      filterPattern: FilterPattern.anyTerm('ERROR', 'Exception', 'Failed'),
+      metricValue: '1',
+    });
+
+    const taskStartupMetricFilter = new MetricFilter(this, 'TaskStartupMetricFilter', {
+      logGroup: ecsLogGroup,
+      metricNamespace: 'Scotustician/Visualization',
+      metricName: 'TaskStartups',
+      filterPattern: FilterPattern.literal('[timestamp, requestId, level="INFO", message="Task started", ...]'),
+      metricValue: '1',
+    });
+
+    // Alarms
+    const highErrorRateAlarm = new Alarm(this, 'HighErrorRateAlarm', {
+      metric: errorMetricFilter.metric({
+        statistic: 'Sum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 10,
+      evaluationPeriods: 2,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+      alarmDescription: 'High error rate in visualization application',
+    });
+
+    const serviceDownAlarm = new Alarm(this, 'ServiceDownAlarm', {
+      metric: targetGroup.metrics.healthyHostCount({
+        statistic: 'Average',
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 2,
+      comparisonOperator: ComparisonOperator.LESS_THAN_THRESHOLD,
+      treatMissingData: TreatMissingData.BREACHING,
+      alarmDescription: 'Visualization service has no healthy targets',
+    });
+
+    // Add SNS actions
+    const snsAction = new SnsAction(alertTopic);
+    highErrorRateAlarm.addAlarmAction(snsAction);
+    serviceDownAlarm.addAlarmAction(snsAction);
 
     // Outputs
     new CfnOutput(this, 'VisualizationUrl', {
@@ -310,6 +293,31 @@ export class ScotusticianVisualizationStack extends Stack {
     new CfnOutput(this, 'LoadBalancerDnsName', {
       value: loadBalancer.loadBalancerDnsName,
       description: 'DNS name of the load balancer',
+    });
+
+    new CfnOutput(this, 'ContainerLogGroup', {
+      value: containerLogGroup.logGroupName,
+      description: 'CloudWatch log group for application containers',
+    });
+
+    new CfnOutput(this, 'EcsLogGroup', {
+      value: ecsLogGroup.logGroupName,
+      description: 'CloudWatch log group for ECS cluster logs',
+    });
+
+    new CfnOutput(this, 'AlertTopicArn', {
+      value: alertTopic.topicArn,
+      description: 'SNS topic for visualization infrastructure alerts',
+    });
+
+    new CfnOutput(this, 'AutoScalingInfo', {
+      value: 'Service scales 0-3 tasks. Scales down to 0 after 1 hour of no requests, scales up automatically on new traffic',
+      description: 'Auto-scaling behavior',
+    });
+
+    new CfnOutput(this, 'CostOptimization', {
+      value: 'Fargate on-demand pricing: ~$0.01/hour when running, $0 when scaled to zero',
+      description: 'Cost information',
     });
   }
 }

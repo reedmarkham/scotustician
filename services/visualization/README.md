@@ -21,9 +21,10 @@ This service provides a web-based interface for exploring clustering results thr
 
 - **Frontend**: Streamlit web application with Plotly visualizations and modular component structure
 - **Code Organization**: Separate modules for data loading (`helpers.py`), UI components (`components.py`), and main application (`app.py`)
-- **Deployment**: AWS ECS with EC2 spot instances and Application Load Balancer for cost optimization
+- **Deployment**: AWS ECS Fargate with Application Load Balancer for reliability and automatic scaling
+- **Auto-scaling**: Scales from 0-3 tasks based on traffic, automatically scales down to zero after 1 hour of inactivity
 - **Data Source**: S3 bucket containing structured clustering results from the clustering service
-- **Infrastructure**: Optimized for minimal cost using spot instances and public subnets
+- **Infrastructure**: Cost-optimized with Fargate on-demand instances and intelligent scaling
 
 ## Configuration
 
@@ -60,6 +61,19 @@ npm run build
 npx cdk deploy ScotusticianVisualizationStack
 ```
 
+### Deployment Features
+- **Fast Deployment**: Fargate eliminates EC2 instance provisioning time
+- **Reliability**: No spot instance interruptions
+- **Automatic Recovery**: ECS automatically replaces failed tasks
+- **Zero Downtime**: Rolling updates with health checks
+
+### Monitoring Deployment
+After deployment, monitor the service using:
+- **CloudWatch Logs**: `/ecs/scotustician-visualization` for application logs
+- **ECS Console**: View service status, task health, and scaling activity  
+- **ALB Health Checks**: Ensure targets are healthy
+- **Custom Metrics**: `Scotustician/Visualization` namespace in CloudWatch
+
 ## Data Structure
 
 The application expects clustering results in S3 with the following structure:
@@ -79,12 +93,26 @@ s3://bucket/analysis/case-clustering-by-term/
 │   └── ...
 ```
 
-## Cost Optimization
+## Cost Optimization & Auto-scaling
 
-- Uses minimal Fargate resources (0.25 vCPU, 512 MB memory)
-- Deployed in public subnets to avoid NAT gateway costs
-- Single instance deployment for development/testing
-- CloudWatch logs with 1-week retention
+### Resource Configuration
+- **Fargate Resources**: 0.25 vCPU, 512 MB memory (equivalent to t3.micro)
+- **Cost**: ~$0.01/hour when running, $0 when scaled to zero
+- **Network**: Private subnets with NAT gateway for security
+- **Storage**: No persistent storage required - reads directly from S3
+
+### Auto-scaling Behavior
+- **Scale Up**: Automatically starts new tasks when traffic arrives (3-minute cooldown)
+- **Scale Down**: Scales to zero after 1 hour of no requests (cost savings)
+- **Capacity**: 0-3 tasks based on demand (10 requests/minute per task target)
+- **Cold Start**: ~30-60 seconds for first request after scale-down
+
+### Monitoring & Logging
+- **Enhanced Logging**: Separate log groups for application and ECS events
+- **Retention**: 2-week log retention for troubleshooting
+- **Metrics**: Custom CloudWatch metrics for errors and task startups
+- **Alerts**: SNS notifications for high error rates and service outages
+- **Health Checks**: Streamlit health endpoint monitoring
 
 ## Security
 
