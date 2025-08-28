@@ -112,7 +112,7 @@ export class ScotusticianVisualizationStack extends Stack {
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.LOWEST_PRICE,
-          spotMaxPrice: '0.03', // Maximum spot price per hour
+          spotMaxPrice: '0.005', // Maximum spot price per hour
         },
         launchTemplateOverrides: [
           { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL) },
