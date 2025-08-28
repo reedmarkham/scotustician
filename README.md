@@ -2,10 +2,9 @@
 
 [![CI/CD](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml/badge.svg)](https://github.com/reedmarkham/scotustician/actions/workflows/deploy.yml)
 
-**scotustician** is a collection of services used to apply data science - particularly visualizing the results of unsupervised clustering over large text embeddings - to Supreme Court of the United States oral argument (OA) transcripts using AWS infrastructure and GitHub Actions to handle CI/CD across the various services: data ingestion, embedding computation, clustering processing, and visualization UI. The motivation for this approach is to better understand the Court by measuring and showing the semantic distance among all available cases' respective oral argument sessions. This repository also includes AWS CDK stacks to provision the underlying infrastructure for all services involved. To start generating embeddings I have chosen without much (any) evaluation to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024d embeddings and is well-regarded on Hugging Face for tasks such as information retrieval. Future research can implement and evaluate multiple models for the clustering task, as well as regressions for justice votes and other applications in the realm of legal studies.
+**scotustician** applies data science to Supreme Court oral argument transcripts, using unsupervised clustering and text embeddings to visualize semantic relationships between cases. Built on AWS with automated CI/CD, it includes data ingestion, embedding generation, clustering analysis, and a visualization interface to better understand the Court through semantic distance measurements across all available oral argument sessions. 
 
-[Oyez.org](https://oyez.org) provides an [undocumented but widely used API](https://github.com/walkerdb/supreme_court_transcripts) for accessing these transcripts as raw text. This project prioritizes building an end-to-end system to enable data-driven interaction with SCOTUS OA transcripts rather than more deeply optimizing some of its components, such as the data ingestor or the embedding service respectively.
-
+The primary data source is [Oyez.org](https://oyez.org), which provides an [undocumented API](https://github.com/walkerdb/supreme_court_transcripts) for accessing oral argument transcripts as raw text with metadata regarding speakers, case information, etc. To prioritize building an end-to-end solution, I chose without much rigorous evaluation to use the [baai/bge-m3](https://huggingface.co/BAAI/bge-m3) model, which generates 1024-dimensional embeddings. Future research can implement and evaluate multiple models (such as [nlpaueb/legal-bert-base-uncased](https://huggingface.co/nlpaueb/legal-bert-base-uncased)) for the clustering task to measure any benefit of using a more specialized model for the legal domain. There are other data science techniques to explore applying as well, such as predicting justice votes from the oral argument embeddings or integrating labeled data on cases, etc. from existing legal research.
 
 ## Pipeline Orchestration
 
@@ -13,7 +12,7 @@ The scotustician pipeline supports both historical data processing and ongoing c
 
 ### Current Year Processing (Automated)
 
-**Scheduled Execution**: Step Functions automatically runs twice weekly (Monday/Thursday 10 AM ET) during the Supreme Court's active term (October through July) to process current year SCOTUS data.
+**Scheduled Execution**: Step Functions automatically runs twice weekly (Monday/Thursday 10 AM ET) during the Supreme Court's active term (October through July) to process the current year's data.
 
 **Manual Current Year**: For immediate current year processing:
 
