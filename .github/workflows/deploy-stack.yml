@@ -37,6 +37,8 @@ on:
 env:
   TOOLKIT_STACK: CDKToolkit-scotustician
   BOOTSTRAP_QUALIFIER: sctstcn
+  CDK_DISABLE_VERSION_CHECK: true
+  CDK_CLI_ASM_DISABLE: true
 
 jobs:
   deploy:
@@ -69,36 +71,32 @@ jobs:
               --stack-name $STACK_NAME \
               --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
             
-            echo "Attempt $((RETRY_COUNT + 1)): Current stack status: $STACK_STATUS"
-            
             case $STACK_STATUS in
               "UPDATE_ROLLBACK_COMPLETE")
-                echo "Stack in UPDATE_ROLLBACK_COMPLETE state, continuing with deployment..."
-                echo "Previous update was rolled back, stack is ready for new deployment"
+                echo "Stack ready for deployment (rollback complete)"
                 break
                 ;;
               "UPDATE_ROLLBACK_IN_PROGRESS")
                 echo "Waiting for rollback to complete..."
-                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME
+                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME 2>/dev/null
                 break
                 ;;
               "UPDATE_IN_PROGRESS")
-                echo "Stack update in progress, waiting..."
-                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME || true
+                echo "Waiting for update to complete..."
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || true
                 ;;
               "UPDATE_ROLLBACK_FAILED")
-                echo "Rollback failed, attempting to continue rollback..."
-                aws cloudformation continue-update-rollback --stack-name $STACK_NAME || true
-                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME || true
+                echo "Attempting to continue rollback..."
+                aws cloudformation continue-update-rollback --stack-name $STACK_NAME 2>/dev/null || true
+                aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME 2>/dev/null || true
                 ;;
               "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS")
-                echo "Cleanup in progress, waiting..."
-                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                echo "Waiting for cleanup to complete..."
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null
                 break
                 ;;
               "ROLLBACK_COMPLETE")
-                echo "ERROR: Stack in ROLLBACK_COMPLETE state"
-                echo "Manual intervention required - delete stack and redeploy"
+                echo "ERROR: Stack in ROLLBACK_COMPLETE state - manual intervention required"
                 exit 1
                 ;;
               "CREATE_FAILED"|"DELETE_FAILED")
@@ -134,17 +132,15 @@ jobs:
             echo "Checking for stack drift..."
             DRIFT_ID=$(aws cloudformation detect-stack-drift \
               --stack-name ${{ inputs.stack_name }} \
-              --query 'StackDriftDetectionId' --output text)
+              --query 'StackDriftDetectionId' --output text --no-cli-pager 2>/dev/null)
             
             sleep 10
             DRIFT_STATUS=$(aws cloudformation describe-stack-drift-detection-status \
               --stack-drift-detection-id $DRIFT_ID \
-              --query 'StackDriftStatus' --output text)
+              --query 'StackDriftStatus' --output text --no-cli-pager 2>/dev/null)
               
             if [ "$DRIFT_STATUS" = "DRIFTED" ]; then
               echo "WARNING: Stack has drifted from expected state"
-            else
-              echo "Stack drift check: $DRIFT_STATUS"
             fi
           fi
 
@@ -199,13 +195,14 @@ jobs:
               --toolkit-stack-name $TOOLKIT_STACK \
               $CONTEXT_FLAGS \
               --require-approval never \
-              --method direct"
+              --method direct \
+              --progress events"
             
             if [ -n "${{ inputs.outputs_file }}" ]; then
               DEPLOY_CMD="$DEPLOY_CMD --outputs-file ${{ inputs.outputs_file }}"
             fi
             
-            if eval $DEPLOY_CMD; then
+            if eval $DEPLOY_CMD 2>/dev/null; then
               echo "Deployment successful"
               break
             else

@@ -111,7 +111,7 @@ jobs:
 
   deploy_visualization:
     needs: [plan, deploy_shared, deploy_clustering]
-    if: needs.plan.outputs.deploy_visualization == 'true'
+    if: needs.plan.outputs.deploy_visualization == 'true' && (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianVisualizationStack"
@@ -120,7 +120,7 @@ jobs:
 
   deploy_orchestration:
     needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering]
-    if: needs.plan.outputs.deploy_orchestration == 'true'
+    if: needs.plan.outputs.deploy_orchestration == 'true' && (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped') && (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped') && (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
