@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { ScotusticianSharedStack, ScotusticianSharedStackProps } from '../lib/scotustician-shared-stack';
+import { ScotusticianSharedStack } from '../lib/scotustician-shared-stack';
 import { ScotusticianDbStack } from '../lib/scotustician-db-stack';
 import { ScotusticianIngestStack } from '../lib/scotustician-ingest-stack';
 import { ScotusticianTransformersStack } from '../lib/scotustician-transformers-stack';
@@ -32,6 +32,7 @@ const shared = new ScotusticianSharedStack(app, 'ScotusticianSharedStack', {
 const db = new ScotusticianDbStack(app, 'ScotusticianDbStack', {
   env,
   awsIamArn: shared.awsIamArn,
+  scotusticianBucket: shared.scotusticianBucket,
   // vpc: shared.vpc, // Uncomment if your constructor supports passing VPC
 });
 

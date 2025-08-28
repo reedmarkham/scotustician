@@ -1,16 +1,18 @@
-import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as iam from 'aws-cdk-lib/aws-iam';
 
-export interface ScotusticianIngestStackProps extends StackProps {
-  cluster: ecs.Cluster;
-  vpc: ec2.IVpc;
+import type { IVpc } from 'aws-cdk-lib/aws-ec2';
+
+import { Stack, StackProps, DefaultStackSynthesizer, CfnOutput, RemovalPolicy, Tags } from 'aws-cdk-lib';
+import { Cluster, FargateTaskDefinition, ContainerImage, LogDrivers } from 'aws-cdk-lib/aws-ecs';
+import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
+import { LogGroup, MetricFilter, FilterPattern, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
+import { Role, ServicePrincipal, PolicyStatement, PolicyDocument, Effect } from 'aws-cdk-lib/aws-iam';
+
+interface ScotusticianIngestStackProps extends StackProps {
+  cluster: Cluster;
+  vpc: IVpc;
 }
 
 export class ScotusticianIngestStack extends Stack {
@@ -32,9 +34,9 @@ export class ScotusticianIngestStack extends Stack {
     const taskCpu = 1024;  // 1 vCPU for DLT pipeline
     const taskMemory = 3072;  // 3GB memory, leaving 1GB for system overhead
 
-    const bucket = s3.Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
+  const bucket = Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
-    const image = new ecr_assets.DockerImageAsset(this, 'IngestImage', {
+    const image = new DockerImageAsset(this, 'IngestImage', {
       directory: '../services/ingest',
       file: 'Dockerfile',
       buildArgs: {
@@ -42,7 +44,7 @@ export class ScotusticianIngestStack extends Stack {
       },
     });
 
-    const taskDefinition = new ecs.FargateTaskDefinition(this, 'IngestTaskDef', {
+    const taskDefinition = new FargateTaskDefinition(this, 'IngestTaskDef', {
       cpu: taskCpu,
       memoryLimitMiB: taskMemory,
     });
@@ -51,8 +53,8 @@ export class ScotusticianIngestStack extends Stack {
 
     // Restrict ECS task execution to root user only
     const accountId = this.account;
-    taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.DENY,
+    taskDefinition.taskRole.addToPrincipalPolicy(new PolicyStatement({
+      effect: Effect.DENY,
       actions: ['ecs:RunTask', 'ecs:StartTask'],
       resources: ['*'],
       conditions: {
@@ -65,10 +67,10 @@ export class ScotusticianIngestStack extends Stack {
     const currentYear = new Date().getFullYear();
     
     const container = taskDefinition.addContainer('IngestContainer', {
-      image: ecs.ContainerImage.fromDockerImageAsset(image),
+      image: ContainerImage.fromDockerImageAsset(image),
       cpu: taskCpu,
       memoryLimitMiB: taskMemory,
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
+      logging: LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
         START_TERM: currentYear.toString(),
@@ -94,40 +96,40 @@ export class ScotusticianIngestStack extends Stack {
       value: container.containerName,
     });
 
-    const logGroup = new logs.LogGroup(this, 'IngestLogGroup', {
+    const logGroup = new LogGroup(this, 'IngestLogGroup', {
       logGroupName: '/ecs/ingest',
       removalPolicy: RemovalPolicy.DESTROY,
-      retention: logs.RetentionDays.ONE_WEEK,
+      retention: RetentionDays.ONE_WEEK,
     });
 
-    const errorFilter = new logs.MetricFilter(this, 'IngestErrorMetricFilter', {
+    const errorFilter = new MetricFilter(this, 'IngestErrorMetricFilter', {
       logGroup,
       metricName: 'IngestErrors',
       metricNamespace: 'Scotustician',
-      filterPattern: logs.FilterPattern.stringValue('$.level', '=', 'ERROR'),
+      filterPattern: FilterPattern.stringValue('$.level', '=', 'ERROR'),
       metricValue: '1',
     });
 
-    new cloudwatch.Alarm(this, 'IngestErrorAlarm', {
+    new Alarm(this, 'IngestErrorAlarm', {
       metric: errorFilter.metric(),
       threshold: 1,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
       alarmDescription: 'Alarm if any ERROR-level logs are detected in the ingest container.',
     });
 
-    const eventRole = new iam.Role(this, 'IngestScheduleRole', {
-      assumedBy: new iam.ServicePrincipal('events.amazonaws.com'),
+    const eventRole = new Role(this, 'IngestScheduleRole', {
+      assumedBy: new ServicePrincipal('events.amazonaws.com'),
       inlinePolicies: {
-        EcsRunTask: new iam.PolicyDocument({
+        EcsRunTask: new PolicyDocument({
           statements: [
-            new iam.PolicyStatement({
+            new PolicyStatement({
               actions: ['ecs:RunTask'],
               resources: [taskDefinition.taskDefinitionArn],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               actions: ['iam:PassRole'],
               resources: [
                 taskDefinition.taskRole.roleArn,
@@ -138,29 +140,6 @@ export class ScotusticianIngestStack extends Stack {
         }),
       },
     });
-
-    // Auto-scheduling disabled for security - tasks must be run manually by root user
-    // const scheduleRule = new events.Rule(this, 'IngestScheduleRule', {
-    //   schedule: events.Schedule.cron({
-    //     minute: '00',
-    //     hour: '14',
-    //     weekDay: 'MON,THU',
-    //   }),
-    //   description: 'Schedule ingest task to run at 10 AM ET (14:00 UTC) on Mondays and Thursdays',
-    // });
-
-    // scheduleRule.addTarget(new targets.EcsTask({
-    //   cluster: props.cluster,
-    //   taskDefinition,
-    //   role: eventRole,
-    //   subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
-    //   launchType: ecs.LaunchType.FARGATE,
-    //   assignPublicIp: true,
-    // }));
-
-    // new CfnOutput(this, 'IngestScheduleRuleArn', {
-    //   value: scheduleRule.ruleArn,
-    // });
 
     this.taskDefinitionArn = taskDefinition.taskDefinitionArn;
 

@@ -1,25 +1,38 @@
-import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as rds from 'aws-cdk-lib/aws-rds';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as cr from 'aws-cdk-lib/custom-resources';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
-import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 import * as path from 'path';
 
-export interface ScotusticianDbStackProps extends cdk.StackProps {
+import { 
+  Stack, StackProps, CustomResource, Duration, RemovalPolicy, CfnOutput, DefaultStackSynthesizer 
+} from 'aws-cdk-lib';
+import { IBucket } from 'aws-cdk-lib/aws-s3';
+import { 
+  Vpc, SecurityGroup, Peer, Port, SubnetType, GatewayVpcEndpoint, InterfaceVpcEndpoint, GatewayVpcEndpointAwsService, 
+  InterfaceVpcEndpointAwsService, InstanceType, InstanceClass, InstanceSize 
+} from 'aws-cdk-lib/aws-ec2';
+import { 
+  DatabaseInstance, DatabaseInstanceEngine, PostgresEngineVersion, SubnetGroup, Credentials, StorageType, ParameterGroup 
+} from 'aws-cdk-lib/aws-rds';
+import { Function as LambdaFunction, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
+import { Provider } from 'aws-cdk-lib/custom-resources';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { 
+  Role, ServicePrincipal, ManagedPolicy, PolicyDocument, PolicyStatement, ArnPrincipal, Effect
+} from 'aws-cdk-lib/aws-iam';
+import { CfnResourcePolicy } from 'aws-cdk-lib/aws-secretsmanager';
+import { 
+  Cluster, FargateTaskDefinition, ContainerImage, LogDrivers, Secret as EcsSecret, FargatePlatformVersion 
+} from 'aws-cdk-lib/aws-ecs';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { EcsTask } from 'aws-cdk-lib/aws-events-targets';
+import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets';
+
+
+export interface ScotusticianDbStackProps extends StackProps {
   awsIamArn: string;
+  scotusticianBucket: IBucket;
 }
 
-export class ScotusticianDbStack extends cdk.Stack {
+export class ScotusticianDbStack extends Stack {
   constructor(scope: Construct, id: string, props: ScotusticianDbStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
 
@@ -33,11 +46,7 @@ export class ScotusticianDbStack extends cdk.Stack {
       throw new Error('awsIamArn prop must be defined');
     }
 
-    const scotusticianBucket = s3.Bucket.fromBucketName(
-      this,
-      'ScotusticianBucket',
-      'scotustician'
-    );
+    const scotusticianBucket = props.scotusticianBucket;
 
     // const scotusticianBucket = new s3.Bucket(this, 'ScotusticianBucket', {
     //   bucketName: 'scotustician',
@@ -46,19 +55,19 @@ export class ScotusticianDbStack extends cdk.Stack {
     //   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     // });
 
-    const vpc = new ec2.Vpc(this, 'ScotusticianVpc', {
+  const vpc = new Vpc(this, 'ScotusticianVpc', {
       maxAzs: 2,
       natGateways: 0, // Cost optimization: no NAT gateways
       subnetConfiguration: [
         {
           cidrMask: 24,
           name: 'isolated-subnet',
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+          subnetType: SubnetType.PRIVATE_ISOLATED,
         },
       ],
     });
 
-    const dbSecurityGroup = new ec2.SecurityGroup(this, 'ScotusticianDbSecurityGroup', {
+  const dbSecurityGroup = new SecurityGroup(this, 'ScotusticianDbSecurityGroup', {
       vpc,
       description: 'Security group for Scotustician RDS instance - restricted access',
       allowAllOutbound: false,
@@ -66,46 +75,41 @@ export class ScotusticianDbStack extends cdk.Stack {
 
     // Only allow access from within VPC CIDR range
     dbSecurityGroup.addIngressRule(
-      ec2.Peer.ipv4(vpc.vpcCidrBlock),
-      ec2.Port.tcp(5432),
+      Peer.ipv4(vpc.vpcCidrBlock),
+      Port.tcp(5432),
       'Allow PostgreSQL access from VPC only'
     );
 
-    const subnetGroup = new rds.SubnetGroup(this, 'ScotusticianDbSubnetGroup', {
+  const subnetGroup = new SubnetGroup(this, 'ScotusticianDbSubnetGroup', {
       vpc,
       description: 'Subnet group for Scotustician RDS instance',
       vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+  subnetType: SubnetType.PRIVATE_ISOLATED,
       },
     });
 
-    const postgresInstance = new rds.DatabaseInstance(this, 'ScotusticianPostgresInstance', {
-      engine: rds.DatabaseInstanceEngine.postgres({
-  version: rds.PostgresEngineVersion.VER_16,
+    const postgresInstance = new DatabaseInstance(this, 'ScotusticianPostgresInstance', {
+      engine: DatabaseInstanceEngine.postgres({
+        version: PostgresEngineVersion.VER_16,
       }),
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO), // Cost-effective
+  instanceType: InstanceType.of(InstanceClass.T3, InstanceSize.MICRO), // Cost-effective
       vpc,
       subnetGroup,
       securityGroups: [dbSecurityGroup],
-      
       databaseName: 'scotustician',
-      credentials: rds.Credentials.fromGeneratedSecret('dbuser', {
+      credentials: Credentials.fromGeneratedSecret('dbuser', {
         secretName: 'scotustician-db-credentials',
       }),
-      
       allocatedStorage: 20,
-      storageType: rds.StorageType.GP2,
-      
-      backupRetention: cdk.Duration.days(7),
+      storageType: StorageType.GP2,
+      backupRetention: Duration.days(7),
       deletionProtection: false,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      
+      removalPolicy: RemovalPolicy.RETAIN,
       storageEncrypted: true,
       publiclyAccessible: false, // Security: no public access
-      
-      parameterGroup: new rds.ParameterGroup(this, 'ScotusticianDbParameterGroup', {
-        engine: rds.DatabaseInstanceEngine.postgres({
-          version: rds.PostgresEngineVersion.VER_16,
+      parameterGroup: new ParameterGroup(this, 'ScotusticianDbParameterGroup', {
+        engine: DatabaseInstanceEngine.postgres({
+          version: PostgresEngineVersion.VER_16,
         }),
         parameters: {
           // Common performance-related parameters for PostgreSQL
@@ -118,29 +122,29 @@ export class ScotusticianDbStack extends cdk.Stack {
     });
 
     // VPC Endpoints for AWS services
-    const secretsManagerEndpoint = new ec2.InterfaceVpcEndpoint(this, 'SecretsManagerVpcEndpoint', {
+  const secretsManagerEndpoint = new InterfaceVpcEndpoint(this, 'SecretsManagerVpcEndpoint', {
       vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+      service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
       subnets: {
-        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+  subnetType: SubnetType.PRIVATE_ISOLATED,
       },
     });
 
-    const s3Endpoint = new ec2.GatewayVpcEndpoint(this, 'S3VpcEndpoint', {
+  const s3Endpoint = new GatewayVpcEndpoint(this, 'S3VpcEndpoint', {
       vpc,
-      service: ec2.GatewayVpcEndpointAwsService.S3,
+      service: GatewayVpcEndpointAwsService.S3,
       subnets: [{
-        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+  subnetType: SubnetType.PRIVATE_ISOLATED,
       }],
     });
 
     // Lambda function for database initialization
-    const dbInitFunction = new lambda.Function(this, 'DbInitFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
+    const dbInitFunction = new LambdaFunction(this, 'DbInitFunction', {
+      runtime: Runtime.PYTHON_3_11,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda'), {
+      code: Code.fromAsset(path.join(__dirname, '../lambda'), {
         bundling: {
-          image: lambda.Runtime.PYTHON_3_11.bundlingImage,
+          image: Runtime.PYTHON_3_11.bundlingImage,
           command: [
             'bash', '-c',
             'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
@@ -149,36 +153,36 @@ export class ScotusticianDbStack extends cdk.Stack {
       }),
       vpc,
       vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+  subnetType: SubnetType.PRIVATE_ISOLATED,
       },
       securityGroups: [dbSecurityGroup],
-      timeout: cdk.Duration.minutes(5),
+      timeout: Duration.minutes(5),
       environment: {
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
       },
-      logRetention: logs.RetentionDays.ONE_WEEK,
+      logRetention: RetentionDays.ONE_WEEK,
     });
 
     // Grant permissions to Lambda function
     postgresInstance.secret!.grantRead(dbInitFunction);
 
     // Add resource policy to restrict secret access to specific IAM user only
-    const secretResourcePolicy = new iam.PolicyDocument({
+    const secretResourcePolicy = new PolicyDocument({
       statements: [
-        new iam.PolicyStatement({
+        new PolicyStatement({
           sid: 'AllowScotusticianUserAccess',
-          effect: iam.Effect.ALLOW,
-          principals: [new iam.ArnPrincipal(scotusticianUserArn)],
+          effect: Effect.ALLOW,
+          principals: [new ArnPrincipal(scotusticianUserArn)],
           actions: [
             'secretsmanager:GetSecretValue',
             'secretsmanager:DescribeSecret'
           ],
           resources: ['*'],
         }),
-        new iam.PolicyStatement({
+        new PolicyStatement({
           sid: 'AllowLambdaInitAccess',
-          effect: iam.Effect.ALLOW,
-          principals: [new iam.ArnPrincipal(dbInitFunction.role!.roleArn)],
+          effect: Effect.ALLOW,
+          principals: [new ArnPrincipal(dbInitFunction.role!.roleArn)],
           actions: [
             'secretsmanager:GetSecretValue',
             'secretsmanager:DescribeSecret'
@@ -189,7 +193,7 @@ export class ScotusticianDbStack extends cdk.Stack {
     });
 
     // Create a separate resource policy for the database secret
-    new secretsmanager.CfnResourcePolicy(this, 'DbSecretResourcePolicy', {
+    new CfnResourcePolicy(this, 'DbSecretResourcePolicy', {
       secretId: postgresInstance.secret!.secretArn,
       resourcePolicy: secretResourcePolicy.toJSON(),
     });
@@ -197,31 +201,31 @@ export class ScotusticianDbStack extends cdk.Stack {
     // Allow Lambda to connect to RDS
     dbSecurityGroup.addIngressRule(
       dbSecurityGroup,
-      ec2.Port.tcp(5432),
+      Port.tcp(5432),
       'Allow Lambda to connect to RDS'
     );
 
     // Allow Lambda to connect to RDS PostgreSQL
     dbSecurityGroup.addEgressRule(
       dbSecurityGroup,
-      ec2.Port.tcp(5432),
+      Port.tcp(5432),
       'Allow Lambda to connect to RDS'
     );
 
     // Allow Lambda to access VPC endpoints for AWS services
     dbSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(vpc.vpcCidrBlock),
-      ec2.Port.tcp(443),
+      Peer.ipv4(vpc.vpcCidrBlock),
+      Port.tcp(443),
       'Allow HTTPS access to VPC endpoints'
     );
 
     // Custom resource to trigger database initialization
-    const dbInitProvider = new cr.Provider(this, 'DbInitProvider', {
+    const dbInitProvider = new Provider(this, 'DbInitProvider', {
       onEventHandler: dbInitFunction,
-      logRetention: logs.RetentionDays.ONE_WEEK,
+      logRetention: RetentionDays.ONE_WEEK,
     });
 
-    const dbInitResource = new cdk.CustomResource(this, 'DbInitResource', {
+    const dbInitResource = new CustomResource(this, 'DbInitResource', {
       serviceToken: dbInitProvider.serviceToken,
       properties: {
         SecretArn: postgresInstance.secret!.secretArn,
@@ -241,30 +245,30 @@ export class ScotusticianDbStack extends cdk.Stack {
     // ========================================
 
     // Create ECS Cluster
-    const ecsCluster = new ecs.Cluster(this, 'DbtEcsCluster', {
+  const ecsCluster = new Cluster(this, 'DbtEcsCluster', {
       vpc,
       clusterName: 'scotustician-dbt-cluster',
       containerInsights: true,
     });
 
     // Create CloudWatch Log Group for dbt
-    const dbtLogGroup = new logs.LogGroup(this, 'DbtLogGroup', {
+    const dbtLogGroup = new LogGroup(this, 'DbtLogGroup', {
       logGroupName: '/ecs/scotustician-dbt',
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      retention: RetentionDays.ONE_WEEK,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Create ECS Task Execution Role
-    const dbtTaskExecutionRole = new iam.Role(this, 'DbtTaskExecutionRole', {
-      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    const dbtTaskExecutionRole = new Role(this, 'DbtTaskExecutionRole', {
+      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
       managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+        ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
       ],
     });
 
     // Create ECS Task Role
-    const dbtTaskRole = new iam.Role(this, 'DbtTaskRole', {
-      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    const dbtTaskRole = new Role(this, 'DbtTaskRole', {
+      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
 
     // Grant the task role access to the database secret
@@ -274,13 +278,13 @@ export class ScotusticianDbStack extends cdk.Stack {
     scotusticianBucket.grantReadWrite(dbtTaskRole);
 
     // Create dbt Docker image asset
-    const dbtImage = new ecr_assets.DockerImageAsset(this, 'DbtImage', {
+    const dbtImage = new DockerImageAsset(this, 'DbtImage', {
       directory: path.join(__dirname, '../dbt'),
-      platform: ecr_assets.Platform.LINUX_AMD64,
+      platform: Platform.LINUX_AMD64,
     });
 
     // Create Task Definition for dbt
-    const dbtTaskDefinition = new ecs.FargateTaskDefinition(this, 'DbtTaskDefinition', {
+    const dbtTaskDefinition = new FargateTaskDefinition(this, 'DbtTaskDefinition', {
       family: 'scotustician-dbt-task',
       memoryLimitMiB: 2048,
       cpu: 1024,
@@ -290,8 +294,8 @@ export class ScotusticianDbStack extends cdk.Stack {
 
     // Add container to task definition
     const dbtContainer = dbtTaskDefinition.addContainer('dbt-container', {
-      image: ecs.ContainerImage.fromDockerImageAsset(dbtImage),
-      logging: ecs.LogDrivers.awsLogs({
+      image: ContainerImage.fromDockerImageAsset(dbtImage),
+      logging: LogDrivers.awsLogs({
         streamPrefix: 'dbt',
         logGroup: dbtLogGroup,
       }),
@@ -301,16 +305,16 @@ export class ScotusticianDbStack extends cdk.Stack {
         S3_BUCKET: scotusticianBucket.bucketName,
       },
       secrets: {
-        DB_HOST: ecs.Secret.fromSecretsManager(postgresInstance.secret!, 'host'),
-        DB_PORT: ecs.Secret.fromSecretsManager(postgresInstance.secret!, 'port'),
-        DB_NAME: ecs.Secret.fromSecretsManager(postgresInstance.secret!, 'dbname'),
-        DB_USER: ecs.Secret.fromSecretsManager(postgresInstance.secret!, 'username'),
-        DB_PASSWORD: ecs.Secret.fromSecretsManager(postgresInstance.secret!, 'password'),
+        DB_HOST: EcsSecret.fromSecretsManager(postgresInstance.secret!, 'host'),
+        DB_PORT: EcsSecret.fromSecretsManager(postgresInstance.secret!, 'port'),
+        DB_NAME: EcsSecret.fromSecretsManager(postgresInstance.secret!, 'dbname'),
+        DB_USER: EcsSecret.fromSecretsManager(postgresInstance.secret!, 'username'),
+        DB_PASSWORD: EcsSecret.fromSecretsManager(postgresInstance.secret!, 'password'),
       },
     });
 
     // Create Security Group for ECS Tasks
-    const dbtSecurityGroup = new ec2.SecurityGroup(this, 'DbtEcsSecurityGroup', {
+    const dbtSecurityGroup = new SecurityGroup(this, 'DbtEcsSecurityGroup', {
       vpc,
       description: 'Security group for dbt ECS tasks',
       allowAllOutbound: false,
@@ -319,29 +323,29 @@ export class ScotusticianDbStack extends cdk.Stack {
     // Allow ECS tasks to connect to RDS
     dbtSecurityGroup.addEgressRule(
       dbSecurityGroup,
-      ec2.Port.tcp(5432),
+      Port.tcp(5432),
       'Allow dbt to connect to RDS'
     );
 
     // Allow RDS to accept connections from ECS tasks
     dbSecurityGroup.addIngressRule(
       dbtSecurityGroup,
-      ec2.Port.tcp(5432),
+      Port.tcp(5432),
       'Allow dbt ECS tasks to connect'
     );
 
     // Allow ECS tasks to access VPC endpoints
     dbtSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(vpc.vpcCidrBlock),
-      ec2.Port.tcp(443),
+      Peer.ipv4(vpc.vpcCidrBlock),
+      Port.tcp(443),
       'Allow HTTPS access to VPC endpoints'
     );
 
     // Create EventBridge rule for scheduled dbt runs
-    const dbtScheduleRule = new events.Rule(this, 'DbtScheduleRule', {
+    const dbtScheduleRule = new Rule(this, 'DbtScheduleRule', {
       ruleName: 'scotustician-dbt-schedule',
       description: 'Trigger dbt runs weekly on Sunday at 12 PM ET',
-      schedule: events.Schedule.cron({
+      schedule: Schedule.cron({
         minute: '0',
         hour: '17',  // 12 PM ET = 5 PM UTC (4 PM during DST)
         weekDay: 'SUN',
@@ -350,23 +354,23 @@ export class ScotusticianDbStack extends cdk.Stack {
 
     // Add ECS task as target for the EventBridge rule
     dbtScheduleRule.addTarget(
-      new targets.EcsTask({
+      new EcsTask({
         cluster: ecsCluster,
         taskDefinition: dbtTaskDefinition,
         taskCount: 1,
         subnetSelection: {
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+    subnetType: SubnetType.PRIVATE_ISOLATED,
         },
         securityGroups: [dbtSecurityGroup],
-        platformVersion: ecs.FargatePlatformVersion.LATEST,
+        platformVersion: FargatePlatformVersion.LATEST,
       })
     );
 
     // Create a Lambda function to trigger dbt runs manually
-    const dbtTriggerFunction = new lambda.Function(this, 'DbtTriggerFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
+    const dbtTriggerFunction = new LambdaFunction(this, 'DbtTriggerFunction', {
+      runtime: Runtime.PYTHON_3_11,
       handler: 'index.handler',
-      code: lambda.Code.fromInline(`
+      code: Code.fromInline(`
 import boto3
 import json
 import os
@@ -409,23 +413,23 @@ def handler(event, context):
       environment: {
         CLUSTER_NAME: ecsCluster.clusterName,
         TASK_DEFINITION: dbtTaskDefinition.taskDefinitionArn,
-        SUBNET_IDS: JSON.stringify(vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnetIds),
+  SUBNET_IDS: JSON.stringify(vpc.selectSubnets({ subnetType: SubnetType.PRIVATE_ISOLATED }).subnetIds),
         SECURITY_GROUP_ID: dbtSecurityGroup.securityGroupId,
       },
-      timeout: cdk.Duration.seconds(30),
+  timeout: Duration.seconds(30),
     });
 
     // Grant Lambda permission to run ECS tasks
-    dbtTriggerFunction.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
+    dbtTriggerFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
       actions: [
         'ecs:RunTask',
       ],
       resources: [dbtTaskDefinition.taskDefinitionArn],
     }));
 
-    dbtTriggerFunction.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
+    dbtTriggerFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
       actions: [
         'iam:PassRole',
       ],
@@ -436,42 +440,42 @@ def handler(event, context):
     }));
 
     // Outputs
-    new cdk.CfnOutput(this, 'DatabaseEndpoint', {
+    new CfnOutput(this, 'DatabaseEndpoint', {
       value: postgresInstance.instanceEndpoint.hostname,
       description: 'RDS Postgres instance endpoint (VPC access only)',
     });
 
-    new cdk.CfnOutput(this, 'DatabasePort', {
+    new CfnOutput(this, 'DatabasePort', {
       value: postgresInstance.instanceEndpoint.port.toString(),
       description: 'RDS Postgres instance port',
     });
 
-    new cdk.CfnOutput(this, 'VpcId', {
+    new CfnOutput(this, 'VpcId', {
       value: vpc.vpcId,
       description: 'VPC ID for database access',
     });
 
-    new cdk.CfnOutput(this, 'SecretArn', {
+    new CfnOutput(this, 'SecretArn', {
       value: postgresInstance.secret!.secretArn,
       description: 'ARN of the database credentials secret',
     });
 
-    new cdk.CfnOutput(this, 'DbInitStatus', {
+    new CfnOutput(this, 'DbInitStatus', {
       value: 'Database initialization will run automatically after deployment',
       description: 'Database initialization status',
     });
 
-    new cdk.CfnOutput(this, 'EcsClusterName', {
+    new CfnOutput(this, 'EcsClusterName', {
       value: ecsCluster.clusterName,
       description: 'ECS Cluster name for dbt',
     });
 
-    new cdk.CfnOutput(this, 'DbtTaskDefinitionArn', {
+    new CfnOutput(this, 'DbtTaskDefinitionArn', {
       value: dbtTaskDefinition.taskDefinitionArn,
       description: 'dbt Task Definition ARN',
     });
 
-    new cdk.CfnOutput(this, 'DbtTriggerFunctionName', {
+    new CfnOutput(this, 'DbtTriggerFunctionName', {
       value: dbtTriggerFunction.functionName,
       description: 'Lambda function name to trigger dbt runs',
     });

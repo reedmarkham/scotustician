@@ -1,17 +1,32 @@
-import * as cdk from 'aws-cdk-lib';
-import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
-import * as stepfunctionstasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as sns from 'aws-cdk-lib/aws-sns';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as path from 'path';
-import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
 import { Construct } from 'constructs';
+import * as path from 'path';
 
-export interface ScotusticianOrchestrationStackProps extends cdk.StackProps {
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
+import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
+import {
+  Stack, StackProps, DefaultStackSynthesizer, Tags, Duration, CfnOutput
+} from 'aws-cdk-lib';
+import {
+  StateMachine, StateMachineType, TaskInput, Condition, Wait, WaitTime, Pass,
+  Choice, Fail, Parallel, IntegrationPattern, LogLevel
+} from 'aws-cdk-lib/aws-stepfunctions';
+import {
+  LambdaInvoke, CallAwsService, BatchSubmitJob
+} from 'aws-cdk-lib/aws-stepfunctions-tasks';
+import {
+  Function as LambdaFunction, Runtime, Code
+} from 'aws-cdk-lib/aws-lambda';
+import {
+  PolicyStatement, Effect
+} from 'aws-cdk-lib/aws-iam';
+import {
+  Rule, Schedule, RuleTargetInput
+} from 'aws-cdk-lib/aws-events';
+
+
+export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly ingestClusterArn: string;
   readonly ingestTaskDefinitionArn: string;
   readonly transformersJobQueueArn: string;
@@ -23,25 +38,25 @@ export interface ScotusticianOrchestrationStackProps extends cdk.StackProps {
   readonly privateSubnetIds: string[];
 }
 
-export class ScotusticianOrchestrationStack extends cdk.Stack {
-  public readonly stateMachine: stepfunctions.StateMachine;
-  public readonly notificationTopic: sns.Topic;
+export class ScotusticianOrchestrationStack extends Stack {
+  public readonly stateMachine: StateMachine;
+  public readonly notificationTopic: Topic;
 
   constructor(scope: Construct, id: string, props: ScotusticianOrchestrationStackProps) {
     const qualifier = scope.node.tryGetContext('bootstrapQualifier') || 'sctstcn';
 
     super(scope, id, {
       ...props,
-      synthesizer: new cdk.DefaultStackSynthesizer({ qualifier }),
+      synthesizer: new DefaultStackSynthesizer({ qualifier }),
     });
 
-    cdk.Tags.of(this).add('Project', 'scotustician');
-    cdk.Tags.of(this).add('Stack', 'orchestration');
+    Tags.of(this).add('Project', 'scotustician');
+    Tags.of(this).add('Stack', 'orchestration');
 
     //
     // Notifications
     //
-    this.notificationTopic = new sns.Topic(this, 'PipelineNotifications', {
+  this.notificationTopic = new Topic(this, 'PipelineNotifications', {
       topicName: 'scotustician-pipeline-notifications',
       displayName: 'Scotustician Pipeline Notifications',
     });
@@ -49,34 +64,34 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Lambdas
     //
-    const costTrackingFunction = new lambda.Function(this, 'CostTrackingFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
+    const costTrackingFunction = new LambdaFunction(this, 'CostTrackingFunction', {
+      runtime: Runtime.PYTHON_3_11,
       handler: 'cost_tracking.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda')),
-      timeout: cdk.Duration.minutes(2),
+      code: Code.fromAsset(path.join(__dirname, '../lambda')),
+      timeout: Duration.minutes(2),
       environment: {
         SNS_TOPIC_ARN: this.notificationTopic.topicArn,
       },
     });
 
     const dataVerificationFunction = new PythonFunction(this, 'DataVerificationFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
+      runtime: Runtime.PYTHON_3_11,
       handler: 'handler',
       entry: path.join(__dirname, '../lambda'),
       index: 'data_verification.py',
-      timeout: cdk.Duration.minutes(5),
+      timeout: Duration.minutes(5),
     });
 
     // IAM policies
-    costTrackingFunction.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
+    costTrackingFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
       actions: ['ce:GetCostAndUsage'],
       resources: ['*'],
     }));
     this.notificationTopic.grantPublish(costTrackingFunction);
 
-    dataVerificationFunction.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
+    dataVerificationFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
       actions: ['s3:ListBucket', 's3:GetObject', 'secretsmanager:GetSecretValue'],
       resources: [
         'arn:aws:s3:::scotustician',
@@ -88,13 +103,13 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Step Function Tasks
     //
-    const costBaselineTask = new stepfunctionstasks.LambdaInvoke(this, 'CostBaseline', {
+    const costBaselineTask = new LambdaInvoke(this, 'CostBaseline', {
       lambdaFunction: costTrackingFunction,
-      payload: stepfunctions.TaskInput.fromObject({ stage: 'baseline', notify: true }),
+      payload: TaskInput.fromObject({ stage: 'baseline', notify: true }),
       resultPath: '$.costBaseline',
     });
 
-    const startIngestTask = new stepfunctionstasks.CallAwsService(this, 'StartIngestTask', {
+  const startIngestTask = new CallAwsService(this, 'StartIngestTask', {
       service: 'ecs',
       action: 'runTask',
       parameters: {
@@ -128,12 +143,12 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     });
 
     // Use a simpler approach - wait a fixed time and then check status once
-    const waitForIngestCompletion = new stepfunctions.Wait(this, 'WaitForIngestCompletion', {
-      time: stepfunctions.WaitTime.duration(cdk.Duration.minutes(10)), // Wait 10 minutes for ingest to complete
+    const waitForIngestCompletion = new Wait(this, 'WaitForIngestCompletion', {
+      time: WaitTime.duration(Duration.minutes(10)), // Wait 10 minutes for ingest to complete
     });
 
     // Extract input parameters for dynamic configuration
-    const extractInputParams = new stepfunctions.Pass(this, 'ExtractInputParams', {
+  const extractInputParams = new Pass(this, 'ExtractInputParams', {
       parameters: {
         'startTerm.$': '$.startTerm',
         'endTerm.$': '$.endTerm',
@@ -142,7 +157,7 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.inputParams'
     });
 
-    const checkIngestTaskFinalStatus = new stepfunctionstasks.CallAwsService(this, 'CheckIngestTaskFinalStatus', {
+  const checkIngestTaskFinalStatus = new CallAwsService(this, 'CheckIngestTaskFinalStatus', {
       service: 'ecs',
       action: 'describeTasks',
       parameters: {
@@ -153,60 +168,60 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.ingestTaskStatus',
     });
 
-    const evaluateIngestTaskResult = new stepfunctions.Choice(this, 'EvaluateIngestTaskResult')
+    const evaluateIngestTaskResult = new Choice(this, 'EvaluateIngestTaskResult')
       .when(
-        stepfunctions.Condition.and(
-          stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
-          stepfunctions.Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0)
+        Condition.and(
+          Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
+          Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0)
         ),
-        new stepfunctions.Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
+        new Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
       )
       .when(
-        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
-        new stepfunctions.Fail(this, 'IngestTaskFailedWithNonZeroExit', {
+        Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
+        new Fail(this, 'IngestTaskFailedWithNonZeroExit', {
           causePath: '$.ingestTaskStatus.Tasks[0].Containers[0].Reason',
           error: 'INGEST_TASK_FAILED',
         })
       )
       .when(
-        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
-        new stepfunctions.Fail(this, 'IngestTaskTimeout', {
+        Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
+        new Fail(this, 'IngestTaskTimeout', {
           cause: 'Ingest task did not complete within 10 minute timeout',
           error: 'INGEST_TASK_TIMEOUT',
         })
       )
       .otherwise(
-        new stepfunctions.Fail(this, 'IngestTaskUnexpectedStatus', {
+        new Fail(this, 'IngestTaskUnexpectedStatus', {
           causePath: '$.ingestTaskStatus.Tasks[0].LastStatus',
           error: 'INGEST_TASK_UNEXPECTED_STATUS',
         })
       );
 
-    const verifyS3DataTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyS3Data', {
+    const verifyS3DataTask = new LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
-      payload: stepfunctions.TaskInput.fromObject({ type: 's3_ingest', bucket: 'scotustician', prefix: 'raw/oa/' }),
+      payload: TaskInput.fromObject({ type: 's3_ingest', bucket: 'scotustician', prefix: 'raw/oa/' }),
       resultPath: '$.s3Verification',
     });
 
-    const runEmbeddingsTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunEmbeddingsTask', {
+  const runEmbeddingsTask = new BatchSubmitJob(this, 'RunEmbeddingsTask', {
       jobName: 'scotustician-embeddings-stepfunctions',
       jobQueueArn: props.transformersJobQueueArn,
       jobDefinitionArn: props.transformersJobDefinitionArn,
-      integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
+  integrationPattern: IntegrationPattern.RUN_JOB,
       resultPath: '$.embeddingsResult',
     });
 
-    const verifyEmbeddingsTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyEmbeddings', {
+    const verifyEmbeddingsTask = new LambdaInvoke(this, 'VerifyEmbeddings', {
       lambdaFunction: dataVerificationFunction,
-      payload: stepfunctions.TaskInput.fromObject({ type: 'embeddings' }),
+      payload: TaskInput.fromObject({ type: 'embeddings' }),
       resultPath: '$.embeddingsVerification',
     });
 
-    const runBasicClusteringTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunBasicClusteringTask', {
+  const runBasicClusteringTask = new BatchSubmitJob(this, 'RunBasicClusteringTask', {
       jobName: 'scotustician-basic-clustering-stepfunctions',
       jobQueueArn: props.clusteringJobQueueArn,
       jobDefinitionArn: props.clusteringJobDefinitionArn,
-      integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
+  integrationPattern: IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
           'S3_BUCKET': 'scotustician',
@@ -220,11 +235,11 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.basicClusteringResult',
     });
 
-    const runTermByTermClusteringTask = new stepfunctionstasks.BatchSubmitJob(this, 'RunTermByTermClusteringTask', {
+  const runTermByTermClusteringTask = new BatchSubmitJob(this, 'RunTermByTermClusteringTask', {
       jobName: 'scotustician-term-clustering-stepfunctions',
       jobQueueArn: props.clusteringJobQueueArn,
       jobDefinitionArn: props.clusteringJobDefinitionArn,
-      integrationPattern: stepfunctions.IntegrationPattern.RUN_JOB,
+  integrationPattern: IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
           'S3_BUCKET': 'scotustician',
@@ -239,28 +254,28 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.termByTermClusteringResult',
     });
 
-    const parallelClustering = new stepfunctions.Parallel(this, 'ParallelClustering', {
+  const parallelClustering = new Parallel(this, 'ParallelClustering', {
       resultPath: '$.clusteringResults',
     })
       .branch(runBasicClusteringTask)
       .branch(runTermByTermClusteringTask);
 
-    const finalCostReportTask = new stepfunctionstasks.LambdaInvoke(this, 'FinalCostReport', {
+    const finalCostReportTask = new LambdaInvoke(this, 'FinalCostReport', {
       lambdaFunction: costTrackingFunction,
-      payload: stepfunctions.TaskInput.fromObject({ stage: 'complete', notify: true }),
+      payload: TaskInput.fromObject({ stage: 'complete', notify: true }),
       resultPath: '$.finalCostReport',
     });
 
-    const s3DataCheck = new stepfunctions.Choice(this, 'S3DataCheck')
-      .when(stepfunctions.Condition.booleanEquals('$.s3Verification.Payload.verified', true), runEmbeddingsTask)
-      .otherwise(new stepfunctions.Fail(this, 'S3VerificationFailed', {
+    const s3DataCheck = new Choice(this, 'S3DataCheck')
+      .when(Condition.booleanEquals('$.s3Verification.Payload.verified', true), runEmbeddingsTask)
+      .otherwise(new Fail(this, 'S3VerificationFailed', {
         cause: 'S3 data verification failed',
         error: 'DATA_VERIFICATION_ERROR',
       }));
 
-    const embeddingsDataCheck = new stepfunctions.Choice(this, 'EmbeddingsDataCheck')
-      .when(stepfunctions.Condition.booleanEquals('$.embeddingsVerification.Payload.verified', true), parallelClustering)
-      .otherwise(new stepfunctions.Fail(this, 'EmbeddingsVerificationFailed', {
+    const embeddingsDataCheck = new Choice(this, 'EmbeddingsDataCheck')
+      .when(Condition.booleanEquals('$.embeddingsVerification.Payload.verified', true), parallelClustering)
+      .otherwise(new Fail(this, 'EmbeddingsVerificationFailed', {
         cause: 'Embeddings verification failed',
         error: 'DATA_VERIFICATION_ERROR',
       }));
@@ -283,18 +298,18 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // State Machine
     //
-    this.stateMachine = new stepfunctions.StateMachine(this, 'ScotusticianPipeline', {
+    this.stateMachine = new StateMachine(this, 'ScotusticianPipeline', {
       definition,
-      stateMachineType: stepfunctions.StateMachineType.STANDARD,
-      timeout: cdk.Duration.hours(6),
+      stateMachineType: StateMachineType.STANDARD,
+      timeout: Duration.hours(6),
       logs: {
-        destination: logs.LogGroup.fromLogGroupName(this, 'StateMachineLogGroup', '/aws/stepfunctions/scotustician-pipeline'),
-        level: stepfunctions.LogLevel.ALL,
+        destination: LogGroup.fromLogGroupName(this, 'StateMachineLogGroup', '/aws/stepfunctions/scotustician-pipeline'),
+        level: LogLevel.ALL,
       },
     });
 
-    this.stateMachine.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
+    this.stateMachine.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
       actions: [
         'ecs:RunTask',
         'ecs:DescribeTasks',
@@ -312,8 +327,8 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     // First Monday in October through Second Friday in July
     //
     const currentYear = new Date().getFullYear().toString();
-    const scheduleRule = new events.Rule(this, 'CurrentYearScheduleRule', {
-      schedule: events.Schedule.cron({
+    const scheduleRule = new Rule(this, 'CurrentYearScheduleRule', {
+      schedule: Schedule.cron({
         minute: '0',
         hour: '14', // 10 AM ET (14:00 UTC)
         weekDay: 'MON,THU',
@@ -322,55 +337,55 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       description: 'Schedule current year data processing twice weekly during SCOTUS term (Oct-Jul)',
     });
 
-    scheduleRule.addTarget(new targets.SfnStateMachine(this.stateMachine, {
-      input: events.RuleTargetInput.fromObject({
+    scheduleRule.addTarget(new SfnStateMachine(this.stateMachine, {
+      input: RuleTargetInput.fromObject({
         startTerm: currentYear,
         endTerm: currentYear,
         mode: 'scheduled'
       })
     }));
 
-    new cdk.CfnOutput(this, 'StateMachineArn', {
+    new CfnOutput(this, 'StateMachineArn', {
       value: this.stateMachine.stateMachineArn,
       description: 'Step Functions State Machine ARN',
     });
 
-    new cdk.CfnOutput(this, 'ScheduleRuleArn', {
+    new CfnOutput(this, 'ScheduleRuleArn', {
       value: scheduleRule.ruleArn,
       description: 'EventBridge Schedule Rule ARN for current year processing',
     });
 
-    new cdk.CfnOutput(this, 'NotificationTopicArn', {
+    new CfnOutput(this, 'NotificationTopicArn', {
       value: this.notificationTopic.topicArn,
       description: 'SNS Topic ARN for pipeline notifications',
     });
 
-    new cdk.CfnOutput(this, 'StepFunctionsLogGroup', {
+    new CfnOutput(this, 'StepFunctionsLogGroup', {
       value: '/aws/stepfunctions/scotustician-pipeline',
       description: 'CloudWatch Log Group for Step Functions execution logs',
     });
 
-    new cdk.CfnOutput(this, 'StepFunctionsLogGroupConsoleUrl', {
+    new CfnOutput(this, 'StepFunctionsLogGroupConsoleUrl', {
       value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Faws%2Fstepfunctions%2Fscotustician-pipeline`,
       description: 'Direct link to Step Functions CloudWatch logs in AWS Console',
     });
 
-    new cdk.CfnOutput(this, 'IngestTaskLogGroup', {
+    new CfnOutput(this, 'IngestTaskLogGroup', {
       value: '/ecs/scotustician-ingest',
       description: 'CloudWatch Log Group for ECS Ingest Task logs',
     });
 
-    new cdk.CfnOutput(this, 'IngestTaskLogGroupConsoleUrl', {
+    new CfnOutput(this, 'IngestTaskLogGroupConsoleUrl', {
       value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Fecs%2Fscotustician-ingest`,
       description: 'Direct link to ECS Ingest Task CloudWatch logs in AWS Console',
     });
 
-    new cdk.CfnOutput(this, 'BatchJobLogGroup', {
+    new CfnOutput(this, 'BatchJobLogGroup', {
       value: '/aws/batch/job',
       description: 'CloudWatch Log Group for AWS Batch job logs (transformers/clustering)',
     });
 
-    new cdk.CfnOutput(this, 'BatchJobLogGroupConsoleUrl', {
+    new CfnOutput(this, 'BatchJobLogGroupConsoleUrl', {
       value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#logsV2:log-groups/log-group/%2Faws%2Fbatch%2Fjob`,
       description: 'Direct link to AWS Batch job CloudWatch logs in AWS Console',
     });

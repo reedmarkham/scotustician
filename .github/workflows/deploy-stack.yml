@@ -27,6 +27,8 @@ on:
         required: true
       S3_BUCKET:
         required: false
+      AWS_IAM_ARN:
+        required: true
     outputs:
       deployment_url:
         description: "Deployment URL if available"
@@ -177,6 +179,9 @@ jobs:
               echo "Deploying with CPU fallback context (insufficient G4/VT quota: ${{ steps.gpu_check.outputs.gpu_quota }} vCPUs)"
             fi
           fi
+
+          # Always add awsIamArn context from secret
+          CONTEXT_FLAGS="$CONTEXT_FLAGS --context awsIamArn=${{ secrets.AWS_IAM_ARN }}"
 
           # Add S3 bucket context for visualization stack
           if [[ "${{ inputs.stack_name }}" == *"Visualization"* ]]; then
