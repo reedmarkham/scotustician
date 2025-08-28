@@ -110,7 +110,12 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.ingestTaskStart',
     });
 
-    const checkIngestTaskStatus = new stepfunctionstasks.CallAwsService(this, 'CheckIngestTaskStatus', {
+    // Use a simpler approach - wait a fixed time and then check status once
+    const waitForIngestCompletion = new stepfunctions.Wait(this, 'WaitForIngestCompletion', {
+      time: stepfunctions.WaitTime.duration(cdk.Duration.minutes(10)), // Wait 10 minutes for ingest to complete
+    });
+
+    const checkIngestTaskFinalStatus = new stepfunctionstasks.CallAwsService(this, 'CheckIngestTaskFinalStatus', {
       service: 'ecs',
       action: 'describeTasks',
       parameters: {
@@ -121,29 +126,20 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
       resultPath: '$.ingestTaskStatus',
     });
 
-    const waitBeforeRetry = new stepfunctions.Wait(this, 'WaitBeforeRetry', {
-      time: stepfunctions.WaitTime.duration(cdk.Duration.seconds(30)),
-    });
-
-    const evaluateIngestTaskStatus = new stepfunctions.Choice(this, 'EvaluateIngestTaskStatus')
+    const evaluateIngestTaskResult = new stepfunctions.Choice(this, 'EvaluateIngestTaskResult')
       .when(
-        stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
-        new stepfunctions.Choice(this, 'CheckIngestTaskExitCode')
-          .when(
-            stepfunctions.Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0),
-            new stepfunctions.Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
-          )
-          .otherwise(
-            new stepfunctions.Fail(this, 'IngestTaskFailed', {
-              cause: 'Ingest task failed with non-zero exit code',
-              error: 'INGEST_TASK_ERROR',
-            })
-          )
+        stepfunctions.Condition.and(
+          stepfunctions.Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
+          stepfunctions.Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0)
+        ),
+        new stepfunctions.Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
       )
-      .otherwise(waitBeforeRetry);
-
-    // Create the polling loop  
-    waitBeforeRetry.next(checkIngestTaskStatus);
+      .otherwise(
+        new stepfunctions.Fail(this, 'IngestTaskFailed', {
+          cause: 'Ingest task failed or did not complete within timeout',
+          error: 'INGEST_TASK_ERROR',
+        })
+      );
 
     const verifyS3DataTask = new stepfunctionstasks.LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
@@ -231,14 +227,11 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Definition
     //
-    // Connect the successful path to continue the pipeline
-    const ingestTaskSuccess = evaluateIngestTaskStatus.afterwards();
-    
     const definition = costBaselineTask
       .next(startIngestTask)
-      .next(checkIngestTaskStatus)
-      .next(evaluateIngestTaskStatus)
-      .next(ingestTaskSuccess
+      .next(waitForIngestCompletion)
+      .next(checkIngestTaskFinalStatus)
+      .next(evaluateIngestTaskResult.afterwards()
         .next(verifyS3DataTask)
         .next(s3DataCheck.afterwards()
           .next(verifyEmbeddingsTask)
