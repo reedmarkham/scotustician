@@ -2,48 +2,127 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "CloudFormationAccess",
       "Effect": "Allow",
       "Action": [
-        "ecs:RunTask",
-        "ecs:StopTask",
-        "ecs:DescribeTasks",
-        "ecs:DescribeTaskDefinition"
+        "cloudformation:*"
       ],
       "Resource": [
-        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:task-definition/scotustician-*",
-        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:task/*"
+        "arn:aws:cloudformation:YOUR_REGION:YOUR_ACCOUNT_ID:stack/Scotustician*",
+        "arn:aws:cloudformation:YOUR_REGION:YOUR_ACCOUNT_ID:stack/CDKToolkit-scotustician*"
       ]
     },
     {
+      "Sid": "CloudFormationGlobal",
       "Effect": "Allow",
       "Action": [
-        "batch:SubmitJob",
-        "batch:DescribeJobs",
-        "batch:ListJobs"
+        "cloudformation:ListStacks",
+        "cloudformation:ValidateTemplate",
+        "cloudformation:DescribeStackDriftDetectionStatus"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3Access",
+      "Effect": "Allow",
+      "Action": [
+        "s3:*"
       ],
       "Resource": [
-        "arn:aws:batch:YOUR_REGION:YOUR_ACCOUNT_ID:job-queue/scotustician-*",
-        "arn:aws:batch:YOUR_REGION:YOUR_ACCOUNT_ID:job-definition/scotustician-*"
+        "arn:aws:s3:::cdk-sctstcn-assets-YOUR_ACCOUNT_ID-YOUR_REGION*",
+        "arn:aws:s3:::scotustician*"
       ]
     },
     {
+      "Sid": "IAMPassRole",
       "Effect": "Allow",
       "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:ListBucket"
+        "iam:PassRole",
+        "sts:AssumeRole"
       ],
       "Resource": [
-        "arn:aws:s3:::scotustician",
-        "arn:aws:s3:::scotustician/*"
+        "arn:aws:iam::YOUR_ACCOUNT_ID:role/cdk-sctstcn-cfn-exec-role-*",
+        "arn:aws:iam::YOUR_ACCOUNT_ID:role/Scotustician*"
       ]
     },
     {
+      "Sid": "ECSAccess",
       "Effect": "Allow",
       "Action": [
-        "secretsmanager:GetSecretValue"
+        "ecs:*"
       ],
-      "Resource": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:scotustician-db-credentials*"
+      "Resource": [
+        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:*scotustician*",
+        "arn:aws:ecs:YOUR_REGION:YOUR_ACCOUNT_ID:task-definition/Scotustician*"
+      ]
+    },
+    {
+      "Sid": "EC2Access",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "YOUR_REGION"
+        }
+      }
+    },
+    {
+      "Sid": "ECRAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:*"
+      ],
+      "Resource": [
+        "arn:aws:ecr:YOUR_REGION:YOUR_ACCOUNT_ID:repository/cdk-sctstcn-container-assets-*",
+        "arn:aws:ecr:YOUR_REGION:YOUR_ACCOUNT_ID:repository/scotustician-*"
+      ]
+    },
+    {
+      "Sid": "MonitoringAccess",
+      "Effect": "Allow",
+      "Action": [
+        "logs:*",
+        "cloudwatch:*",
+        "events:*",
+        "autoscaling:Describe*",
+        "elasticloadbalancing:Describe*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "YOUR_REGION"
+        }
+      }
+    },
+    {
+      "Sid": "SecretsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:*Parameter*",
+        "secretsmanager:*",
+        "servicequotas:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "YOUR_REGION"
+        }
+      }
+    },
+    {
+      "Sid": "DenyDangerous",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*User*",
+        "iam:*AccessKey*",
+        "organizations:*",
+        "account:*",
+        "billing:*"
+      ],
+      "Resource": "*"
     }
   ]
 }

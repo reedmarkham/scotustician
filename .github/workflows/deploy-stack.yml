@@ -61,7 +61,7 @@ jobs:
       - name: Enhanced rollback recovery
         run: |
           STACK_NAME="${{ inputs.stack_name }}"
-          MAX_RETRIES=3
+          MAX_RETRIES=1
           RETRY_COUNT=0
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
@@ -190,7 +190,7 @@ jobs:
             CONTEXT_FLAGS="$CONTEXT_FLAGS --context s3BucketName=${{ secrets.S3_BUCKET }}"
           fi
 
-          MAX_RETRIES=2
+          MAX_RETRIES=1
           RETRY_COUNT=0
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do

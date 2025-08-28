@@ -115,9 +115,9 @@ export class ScotusticianVisualizationStack extends Stack {
       mixedInstancesPolicy: {
         launchTemplate: launchTemplate,
         instancesDistribution: {
-          onDemandPercentageAboveBaseCapacity: 0, // 100% spot instances
+          onDemandPercentageAboveBaseCapacity: 10, // 10% on-demand, 90% spot instances
           spotAllocationStrategy: SpotAllocationStrategy.LOWEST_PRICE,
-          spotMaxPrice: '0.005', // Maximum spot price per hour
+          spotMaxPrice: '0.01', // Maximum spot price per hour
         },
         launchTemplateOverrides: [
           { instanceType: InstanceType.of(InstanceClass.T3, InstanceSize.SMALL) },
@@ -131,7 +131,7 @@ export class ScotusticianVisualizationStack extends Stack {
       desiredCapacity: 1,
       vpcSubnets: {
         subnetType: SubnetType.PUBLIC,
-        availabilityZones: ['us-east-1a', 'us-east-1c', 'us-east-1d', 'us-east-1f'], // Exclude us-east-1b
+        availabilityZones: ['us-east-1a', 'us-east-1b', 'us-east-1c', 'us-east-1d', 'us-east-1f'],
       },
       autoScalingGroupName: 'scotustician-visualization-spot-asg',
     });

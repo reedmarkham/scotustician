@@ -96,7 +96,7 @@ jobs:
     secrets: inherit
 
   deploy_clustering:
-    needs: [plan, deploy_shared, deploy_ingest]
+    needs: [plan, deploy_shared, deploy_transformers]
     if: needs.plan.outputs.deploy_clustering == 'true'
     uses: ./.github/workflows/deploy-stack.yml
     with:
@@ -105,7 +105,7 @@ jobs:
     secrets: inherit
 
   deploy_visualization:
-    needs: [plan, deploy_shared, deploy_clustering]
+    needs: [plan, deploy_shared, deploy_clustering, deploy_orchestration]
     if: needs.plan.outputs.deploy_visualization == 'true'
     uses: ./.github/workflows/deploy-stack.yml
     with:

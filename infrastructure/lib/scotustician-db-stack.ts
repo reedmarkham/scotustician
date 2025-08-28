@@ -143,7 +143,7 @@ export class ScotusticianDbStack extends Stack {
     const dbInitFunction = new LambdaFunction(this, 'DbInitFunction', {
       runtime: Runtime.PYTHON_3_11,
       handler: 'index.handler',
-      code: Code.fromAsset(path.join(__dirname, '../lambda'), {
+      code: Code.fromAsset(path.join(__dirname, '../../database/lambda'), {
         bundling: {
           image: Runtime.PYTHON_3_11.bundlingImage,
           command: [
