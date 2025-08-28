@@ -162,7 +162,7 @@ export class ScotusticianOrchestrationStack extends Stack {
       action: 'describeTasks',
       parameters: {
         Cluster: props.ingestClusterArn,
-        'Tasks.$': '$.ingestTaskStart.Tasks[0].TaskArn',
+        'Tasks.$': '$.ingestTaskStart.Tasks',
       },
       iamResources: ['*'],
       resultPath: '$.ingestTaskStatus',
