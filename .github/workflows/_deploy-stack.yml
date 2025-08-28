@@ -149,12 +149,16 @@ jobs:
         id: gpu_check
         run: |
           echo "gpu_quota=0" >> $GITHUB_OUTPUT
+          # Check G and VT instances quota (includes G4 instances)
           output=$(aws service-quotas get-service-quota \
             --service-code ec2 \
-            --quota-code L-417A2B38 \
+            --quota-code L-DB2E81BA \
             --query 'Quota.Value' --output text 2>&1) || true
           if [[ "$output" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             echo "gpu_quota=$output" >> $GITHUB_OUTPUT
+            echo "Found G4/VT quota: $output vCPUs"
+          else
+            echo "Could not retrieve G4/VT quota, output: $output"
           fi
 
       - name: Deploy stack with retry
@@ -164,12 +168,13 @@ jobs:
           # Handle GPU context if needed
           CONTEXT_FLAGS="${{ inputs.context_flags }}"
           if [[ "${{ inputs.gpu_quota_check }}" == "true" ]]; then
-            if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 1" | bc -l) )); then
+            # G4DN.XLARGE needs 4 vCPUs, so check for at least 4
+            if (( $(echo "${{ steps.gpu_check.outputs.gpu_quota }} >= 4" | bc -l) )); then
               CONTEXT_FLAGS="$CONTEXT_FLAGS --context useGpu=true"
-              echo "Deploying with GPU context"
+              echo "Deploying with GPU context (G4DN instances available)"
             else
               CONTEXT_FLAGS="$CONTEXT_FLAGS --context useGpu=false"
-              echo "Deploying with CPU fallback context"
+              echo "Deploying with CPU fallback context (insufficient G4/VT quota: ${{ steps.gpu_check.outputs.gpu_quota }} vCPUs)"
             fi
           fi
 
