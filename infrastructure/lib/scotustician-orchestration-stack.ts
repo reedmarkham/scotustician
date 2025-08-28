@@ -228,14 +228,10 @@ export class ScotusticianOrchestrationStack extends cdk.Stack {
     //
     // Definition
     //
-    // Connect successful ingest completion to S3 verification
-    const ingestSuccess = checkIngestTaskStatus.afterwards();
-    
     const definition = costBaselineTask
       .next(startIngestTask)
       .next(waitForIngestTask)
-      .next(checkIngestTaskStatus)
-      .next(ingestSuccess
+      .next(checkIngestTaskStatus.afterwards()
         .next(verifyS3DataTask)
         .next(s3DataCheck.afterwards()
           .next(verifyEmbeddingsTask)
