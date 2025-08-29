@@ -42,12 +42,6 @@ export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly termClusteringMinClusterSize?: string;
   readonly termClusteringBaseOutputPrefix?: string;
   readonly termClusteringMaxConcurrentJobs?: string;
-  // Legacy props for backward compatibility
-  readonly tsnePerplexity?: string;
-  readonly minClusterSize?: string;
-  readonly maxConcurrentJobs?: string;
-  readonly s3BucketName?: string;
-  readonly scheduleEnabled?: boolean;
 }
 
 export class ScotusticianOrchestrationStack extends Stack {
@@ -101,7 +95,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     }));
     this.notificationTopic.grantPublish(costTrackingFunction);
 
-    const bucketName = props.s3BucketName || 'scotustician';
+    const bucketName = 'scotustician';
     dataVerificationFunction.addToRolePolicy(new PolicyStatement({
       effect: Effect.ALLOW,
       actions: ['s3:ListBucket', 's3:GetObject', 'secretsmanager:GetSecretValue'],
@@ -456,7 +450,9 @@ export class ScotusticianOrchestrationStack extends Stack {
     // Schedule for current year processing during SCOTUS term
     // First Monday in October through Second Friday in July
     //
-    if (props.scheduleEnabled !== false) {
+    // Schedule is enabled by default - can be disabled via CDK context
+    const scheduleEnabled = this.node.tryGetContext('scheduleEnabled') !== false;
+    if (scheduleEnabled) {
       const currentYear = new Date().getFullYear().toString();
       const scheduleRule = new Rule(this, 'CurrentYearScheduleRule', {
         schedule: Schedule.cron({
@@ -473,13 +469,13 @@ export class ScotusticianOrchestrationStack extends Stack {
           startTerm: currentYear,
           endTerm: currentYear,
           mode: 'scheduled',
-          basicClusteringTsnePerplexity: props.basicClusteringTsnePerplexity || props.tsnePerplexity || '30',
-          basicClusteringMinClusterSize: props.basicClusteringMinClusterSize || props.minClusterSize || '5',
+          basicClusteringTsnePerplexity: props.basicClusteringTsnePerplexity || '30',
+          basicClusteringMinClusterSize: props.basicClusteringMinClusterSize || '5',
           basicClusteringOutputPrefix: props.basicClusteringOutputPrefix || 'analysis/case-clustering',
-          termClusteringTsnePerplexity: props.termClusteringTsnePerplexity || props.tsnePerplexity || '30',
-          termClusteringMinClusterSize: props.termClusteringMinClusterSize || props.minClusterSize || '5',
+          termClusteringTsnePerplexity: props.termClusteringTsnePerplexity || '30',
+          termClusteringMinClusterSize: props.termClusteringMinClusterSize || '5',
           termClusteringBaseOutputPrefix: props.termClusteringBaseOutputPrefix || 'analysis/case-clustering-by-term',
-          termClusteringMaxConcurrentJobs: props.termClusteringMaxConcurrentJobs || props.maxConcurrentJobs || '3'
+          termClusteringMaxConcurrentJobs: props.termClusteringMaxConcurrentJobs || '3'
         })
       }));
 
