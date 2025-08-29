@@ -47,7 +47,7 @@ export class ScotusticianIngestStack extends Stack {
       },
     });
 
-    const taskDefinition = new FargateTaskDefinition(this, 'IngestTaskDef', {
+    const taskDefinition = new FargateTaskDefinition(this, 'IngestTaskDefinition', {
       cpu: taskCpu,
       memoryLimitMiB: taskMemory,
     });
@@ -69,7 +69,7 @@ export class ScotusticianIngestStack extends Stack {
 
     const currentYear = new Date().getFullYear();
     
-    const container = taskDefinition.addContainer('ingest-container', {
+    const container = taskDefinition.addContainer('IngestContainer', {
       image: ContainerImage.fromDockerImageAsset(image),
       cpu: taskCpu,
       memoryLimitMiB: taskMemory,
