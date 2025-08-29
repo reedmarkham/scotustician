@@ -22,10 +22,14 @@ import {
 export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly ingestClusterArn: string;
   readonly ingestTaskDefinitionArn: string;
+  readonly ingestContainerName: string;
   readonly transformersJobQueueArn: string;
   readonly transformersJobDefinitionArn: string;
+  readonly transformersJobName: string;
   readonly clusteringJobQueueArn: string;
   readonly clusteringJobDefinitionArn: string;
+  readonly basicClusteringJobName: string;
+  readonly termClusteringJobName: string;
   readonly vpcId: string;
   readonly publicSubnetIds: string[];
   readonly privateSubnetIds: string[];
@@ -122,7 +126,7 @@ export class ScotusticianOrchestrationStack extends Stack {
         },
         Overrides: {
           ContainerOverrides: [{
-            Name: 'IngestContainer',
+            Name: props.ingestContainerName,
             Environment: [
               {
                 Name: 'START_TERM',
@@ -247,7 +251,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     });
 
   const runEmbeddingsTask = new BatchSubmitJob(this, 'RunEmbeddingsTask', {
-      jobName: 'scotustician-embeddings-stepfunctions',
+      jobName: props.transformersJobName,
       jobQueueArn: props.transformersJobQueueArn,
       jobDefinitionArn: props.transformersJobDefinitionArn,
   integrationPattern: IntegrationPattern.RUN_JOB,
@@ -267,7 +271,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     });
 
   const runBasicClusteringTask = new BatchSubmitJob(this, 'RunBasicClusteringTask', {
-      jobName: 'scotustician-basic-clustering-stepfunctions',
+      jobName: props.basicClusteringJobName,
       jobQueueArn: props.clusteringJobQueueArn,
       jobDefinitionArn: props.clusteringJobDefinitionArn,
   integrationPattern: IntegrationPattern.RUN_JOB,
@@ -285,7 +289,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     });
 
   const runTermByTermClusteringTask = new BatchSubmitJob(this, 'RunTermByTermClusteringTask', {
-      jobName: 'scotustician-term-clustering-stepfunctions',
+      jobName: props.termClusteringJobName,
       jobQueueArn: props.clusteringJobQueueArn,
       jobDefinitionArn: props.clusteringJobDefinitionArn,
   integrationPattern: IntegrationPattern.RUN_JOB,

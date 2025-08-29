@@ -29,6 +29,7 @@ export interface ScotusticianTransformersStackProps extends StackProps {
 export class ScotusticianTransformersStack extends Stack {
   public readonly jobQueueArn: string;
   public readonly jobDefinitionArn: string;
+  public readonly jobName: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianTransformersStackProps) {
     const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
@@ -274,8 +275,9 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     // Create Batch job definition for processing (GPU or CPU based on context)
+    const jobDefinitionName = useGpu ? 'scotustician-embedding-gpu' : 'scotustician-embedding-cpu';
     const batchJobDefinition = new EcsJobDefinition(this, 'EmbeddingJobDefinition', {
-      jobDefinitionName: useGpu ? 'scotustician-embedding-gpu' : 'scotustician-embedding-cpu',
+      jobDefinitionName,
       container: new EcsEc2ContainerDefinition(this, 'EmbeddingJobContainer', {
         image: ContainerImage.fromDockerImageAsset(image),
         memory: useGpu ? Size.mebibytes(6144) : Size.mebibytes(8192),
@@ -309,6 +311,7 @@ export class ScotusticianTransformersStack extends Stack {
     // Assign to class properties for orchestration stack
     this.jobQueueArn = jobQueue.jobQueueArn;
     this.jobDefinitionArn = batchJobDefinition.jobDefinitionArn;
+    this.jobName = jobDefinitionName;
 
     // Output Batch resources
     new CfnOutput(this, 'BatchJobQueueArn', {

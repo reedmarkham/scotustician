@@ -25,6 +25,8 @@ export interface ScotusticianClusteringStackProps extends StackProps {
 export class ScotusticianClusteringStack extends Stack {
   public readonly jobQueueArn: string;
   public readonly jobDefinitionArn: string;
+  public readonly basicClusteringJobName: string;
+  public readonly termClusteringJobName: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianClusteringStackProps) {
     const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
@@ -178,9 +180,15 @@ export class ScotusticianClusteringStack extends Stack {
       description: 'ARN of the ECS task definition for case clustering',
     });
 
+    // Define job names for orchestration (logical names for submitted jobs)
+    const basicClusteringJobName = 'scotustician-basic-clustering';
+    const termClusteringJobName = 'scotustician-term-clustering';
+
     // Assign to class properties for orchestration stack
     this.jobQueueArn = clusteringJobQueue.jobQueueArn;
     this.jobDefinitionArn = clusteringJobDefinition.jobDefinitionArn;
+    this.basicClusteringJobName = basicClusteringJobName;
+    this.termClusteringJobName = termClusteringJobName;
 
     new CfnOutput(this, 'ClusteringContainerName', {
       value: clusteringContainer.containerName,

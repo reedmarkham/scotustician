@@ -17,6 +17,7 @@ interface ScotusticianIngestStackProps extends StackProps {
 
 export class ScotusticianIngestStack extends Stack {
   public readonly taskDefinitionArn: string;
+  public readonly containerName: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianIngestStackProps) {
     const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
@@ -82,6 +83,10 @@ export class ScotusticianIngestStack extends Stack {
         MAX_RETRIES: '3',
       },
     });
+
+    // Set public properties
+    this.taskDefinitionArn = taskDefinition.taskDefinitionArn;
+    this.containerName = container.containerName;
 
     new CfnOutput(this, 'IngestTaskDefinitionArn', {
       value: taskDefinition.taskDefinitionArn,
