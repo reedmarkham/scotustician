@@ -137,17 +137,15 @@ jobs:
       gpu_quota_check: true
     secrets: inherit
 
-  # Final deployment: Orchestration needs all other stacks
+  # Parallel deployment group 3: Orchestration only needs compute stacks
   deploy_orchestration:
-    needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering, deploy_visualization, deploy_db]
+    needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering]
     if: |
       needs.plan.outputs.deploy_orchestration == 'true' && 
       (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
       (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped' || needs.plan.outputs.deploy_ingest != 'true') &&
       (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped' || needs.plan.outputs.deploy_transformers != 'true') &&
-      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped' || needs.plan.outputs.deploy_clustering != 'true') &&
-      (needs.deploy_visualization.result == 'success' || needs.deploy_visualization.result == 'skipped' || needs.plan.outputs.deploy_visualization != 'true') &&
-      (needs.deploy_db.result == 'success' || needs.deploy_db.result == 'skipped' || needs.plan.outputs.deploy_db != 'true')
+      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped' || needs.plan.outputs.deploy_clustering != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
