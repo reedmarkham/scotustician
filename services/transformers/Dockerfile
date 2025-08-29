@@ -20,8 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY helpers.py processors.py main.py ./
-RUN chown app:app helpers.py processors.py main.py
+COPY *.py ./
+RUN chown app:app *.py
 
 # Switch to non-root user
 USER app
