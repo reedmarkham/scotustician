@@ -176,7 +176,7 @@ monitor_execution() {
         echo ""
         echo "Results available in:"
         echo "  S3: s3://scotustician/analysis/"
-        echo "  PostgreSQL: embeddings table"
+        echo "  PostgreSQL: scotustician.document_chunk_embeddings table"
         echo ""
         echo "Cost tracking notifications sent to SNS topic."
     fi
