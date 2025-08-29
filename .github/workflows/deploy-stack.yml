@@ -309,8 +309,7 @@ jobs:
             echo "Deploying $stack..."
             
             # Deploy stack directly using CDK
-            cd infrastructure
-            npx cdk deploy $stack \
+            cd infrastructure && npx cdk deploy $stack \
               --context @aws-cdk:bootstrap-qualifier=$BOOTSTRAP_QUALIFIER \
               --toolkit-stack-name $TOOLKIT_STACK \
               --context awsIamArn=${{ secrets.AWS_IAM_ARN }} \

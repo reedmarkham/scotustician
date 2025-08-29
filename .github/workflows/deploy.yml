@@ -68,6 +68,8 @@ jobs:
             orchestration:
               - 'infrastructure/lib/scotustician-orchestration-stack.ts'
               - 'infrastructure/lib/scotustician-ingest-stack.ts'
+              - 'infrastructure/lib/scotustician-transformers-stack.ts'
+              - 'infrastructure/lib/scotustician-clustering-stack.ts'
               - 'infrastructure/bin/**'
               - 'database/**'
               - '.github/workflows/**'
