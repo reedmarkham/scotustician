@@ -30,7 +30,7 @@ def main():
     """, unsafe_allow_html=True)
     
     st.title("⚖️ scotustician: oral argument cluster dashboard")
-    st.markdown("Explore the results of DBSCAN clustering over the scotustician oral argument embeddings, using t-SNE for dimensionality reduction")
+    st.markdown("Explore the results of HDBSCAN clustering over the scotustician oral argument embeddings, using t-SNE for dimensionality reduction")
     
     data_loader = ClusteringDataLoader()
     visualizer = ClusteringVisualizer()
