@@ -188,11 +188,13 @@ export class ScotusticianOrchestrationStack extends Stack {
         'startTerm.$': '$.startTerm',
         'endTerm.$': '$.endTerm',
         'mode.$': '$.mode',
-        'tsnePerplexity.$': '$.tsnePerplexity',
-        'minClusterSize.$': '$.minClusterSize',
-        'baseOutputPrefix.$': '$.baseOutputPrefix',
-        'maxConcurrentJobs.$': '$.maxConcurrentJobs',
-        'outputPrefix.$': '$.outputPrefix',
+        'basicClusteringTsnePerplexity.$': '$.basicClusteringTsnePerplexity',
+        'basicClusteringMinClusterSize.$': '$.basicClusteringMinClusterSize',
+        'basicClusteringOutputPrefix.$': '$.basicClusteringOutputPrefix',
+        'termClusteringTsnePerplexity.$': '$.termClusteringTsnePerplexity',
+        'termClusteringMinClusterSize.$': '$.termClusteringMinClusterSize',
+        'termClusteringBaseOutputPrefix.$': '$.termClusteringBaseOutputPrefix',
+        'termClusteringMaxConcurrentJobs.$': '$.termClusteringMaxConcurrentJobs',
         'executionStartTime.$': '$$.Execution.StartTime'
       },
       resultPath: '$.inputParams'
@@ -283,9 +285,9 @@ export class ScotusticianOrchestrationStack extends Stack {
       containerOverrides: {
         environment: {
           'S3_BUCKET': bucketName,
-          'BASIC_CLUSTERING_OUTPUT_PREFIX.$': '$.inputParams.outputPrefix',
-          'BASIC_CLUSTERING_TSNE_PERPLEXITY.$': '$.inputParams.tsnePerplexity',
-          'BASIC_CLUSTERING_MIN_CLUSTER_SIZE.$': '$.inputParams.minClusterSize',
+          'BASIC_CLUSTERING_OUTPUT_PREFIX.$': '$.inputParams.basicClusteringOutputPrefix',
+          'BASIC_CLUSTERING_TSNE_PERPLEXITY.$': '$.inputParams.basicClusteringTsnePerplexity',
+          'BASIC_CLUSTERING_MIN_CLUSTER_SIZE.$': '$.inputParams.basicClusteringMinClusterSize',
           'START_TERM.$': '$.inputParams.startTerm',
           'END_TERM.$': '$.inputParams.endTerm',
         },
@@ -301,12 +303,12 @@ export class ScotusticianOrchestrationStack extends Stack {
       containerOverrides: {
         environment: {
           'S3_BUCKET': bucketName,
-          'TERM_CLUSTERING_BASE_OUTPUT_PREFIX.$': '$.inputParams.baseOutputPrefix',
-          'TERM_CLUSTERING_TSNE_PERPLEXITY.$': '$.inputParams.tsnePerplexity',
-          'TERM_CLUSTERING_MIN_CLUSTER_SIZE.$': '$.inputParams.minClusterSize',
+          'TERM_CLUSTERING_BASE_OUTPUT_PREFIX.$': '$.inputParams.termClusteringBaseOutputPrefix',
+          'TERM_CLUSTERING_TSNE_PERPLEXITY.$': '$.inputParams.termClusteringTsnePerplexity',
+          'TERM_CLUSTERING_MIN_CLUSTER_SIZE.$': '$.inputParams.termClusteringMinClusterSize',
           'START_TERM.$': '$.inputParams.startTerm',
           'END_TERM.$': '$.inputParams.endTerm',
-          'TERM_CLUSTERING_MAX_CONCURRENT_JOBS.$': '$.inputParams.maxConcurrentJobs',
+          'TERM_CLUSTERING_MAX_CONCURRENT_JOBS.$': '$.inputParams.termClusteringMaxConcurrentJobs',
         },
       },
       resultPath: '$.termByTermClusteringResult',
@@ -460,11 +462,13 @@ export class ScotusticianOrchestrationStack extends Stack {
           startTerm: currentYear,
           endTerm: currentYear,
           mode: 'scheduled',
-          tsnePerplexity: props.tsnePerplexity || '30',
-          minClusterSize: props.minClusterSize || '5',
-          baseOutputPrefix: 'analysis/case-clustering-by-term',
-          maxConcurrentJobs: props.maxConcurrentJobs || '3',
-          outputPrefix: 'analysis/case-clustering'
+          basicClusteringTsnePerplexity: props.tsnePerplexity || '30',
+          basicClusteringMinClusterSize: props.minClusterSize || '5',
+          basicClusteringOutputPrefix: 'analysis/case-clustering',
+          termClusteringTsnePerplexity: props.tsnePerplexity || '30',
+          termClusteringMinClusterSize: props.minClusterSize || '5',
+          termClusteringBaseOutputPrefix: 'analysis/case-clustering-by-term',
+          termClusteringMaxConcurrentJobs: props.maxConcurrentJobs || '3'
         })
       }));
 
