@@ -37,6 +37,7 @@ jobs:
           filters: |
             shared:
               - 'infrastructure/lib/scotustician-shared-stack.ts'
+              - 'infrastructure/lib/scotustician-ingest-stack.ts'
               - 'infrastructure/bin/**'
               - '.github/workflows/**'
             db:
@@ -76,7 +77,7 @@ jobs:
 
   deploy_shared:
     needs: plan
-    if: needs.plan.outputs.deploy_shared == 'true'
+    if: needs.plan.outputs.deploy_shared == 'true' || needs.plan.outputs.deploy_ingest == 'true'
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianSharedStack"
