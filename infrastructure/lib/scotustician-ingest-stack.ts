@@ -73,6 +73,7 @@ export class ScotusticianIngestStack extends Stack {
       logging: LogDrivers.awsLogs({ streamPrefix: 'ingest' }),
       environment: {
         S3_BUCKET: bucket.bucketName,
+        BUCKET_URL: `s3://${bucket.bucketName}`,
         START_TERM: currentYear.toString(),
         END_TERM: currentYear.toString(),
         DLT_PROJECT_DIR: '/code',
