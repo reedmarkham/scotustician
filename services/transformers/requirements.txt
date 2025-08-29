@@ -1,10 +1,11 @@
---extra-index-url https://download.pytorch.org/whl/cu118
+# Use CPU version as fallback, GPU version will be auto-selected if CUDA available
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 boto3==1.34.97
 sentence-transformers==2.7.0
 transformers==4.36.2
 tokenizers==0.15.1
-torch==2.2.0+cu118
+torch==2.2.0+cpu
 scikit-learn==1.4.2
 pandas==2.2.2
 numpy==1.26.4
@@ -12,3 +13,4 @@ psycopg2-binary==2.9.9
 tqdm==4.66.1
 ray[data]==2.10.0
 pyarrow>=14.0.0
+urllib3<2.0.0,>=1.26.0
