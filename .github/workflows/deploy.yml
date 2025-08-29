@@ -118,7 +118,12 @@ jobs:
 
   deploy_orchestration:
     needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering]
-    if: needs.plan.outputs.deploy_orchestration == 'true' && (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped') && (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped') && (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
+    if: |
+      needs.plan.outputs.deploy_orchestration == 'true' && 
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped' || needs.plan.outputs.deploy_ingest != 'true') &&
+      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped' || needs.plan.outputs.deploy_transformers != 'true') &&
+      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped' || needs.plan.outputs.deploy_clustering != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
