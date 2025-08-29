@@ -30,9 +30,9 @@ export class ScotusticianIngestStack extends Stack {
     Tags.of(this).add('Project', 'scotustician');
     Tags.of(this).add('Stack', 'ingest');
 
-    // Optimized for c5.large (2 vCPUs, 4GB RAM) - Rate-limited API ingestion
-    const taskCpu = 1024;  // 1 vCPU for API requests
-    const taskMemory = 3072;  // 3GB memory, leaving 1GB for system overhead
+    // Optimized for rate-limited API ingestion (1 req/sec, 2 workers)
+    const taskCpu = 512;   // 0.5 vCPU sufficient for I/O-bound operations
+    const taskMemory = 1024; // 1GB memory adequate for JSON processing
 
   const bucket = Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
 
@@ -77,7 +77,6 @@ export class ScotusticianIngestStack extends Stack {
         START_TERM: currentYear.toString(),
         END_TERM: currentYear.toString(),
         AWS_DEFAULT_REGION: 'us-east-1',
-        // Rate-limited API optimizations
         MAX_WORKERS: '2',
         REQUEST_TIMEOUT: '30',
         MAX_RETRIES: '3',
