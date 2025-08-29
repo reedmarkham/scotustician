@@ -58,9 +58,9 @@ For granular control, run individual pipeline components using the scripts in [`
 ## Data Pipeline Components
 
 1. **`ingest`** - Collect SCOTUS data from Oyez.org API:
-   - [DLT (data load tool)](https://dlthub.com/) for declarative data extraction
-   - Incremental loading with automatic rate limiting
-   - Stores raw JSON files in S3 with built-in state management
+   - Rate-limited API client respects 1 call/second limit  
+   - Incremental loading by checking existing S3 data
+   - Stores raw JSON files in S3 with parallel processing
 
 2. **`transformers`** - Generate embeddings using distributed computing:
    - AWS Batch with spot GPU instances (g4dn.xlarge) for cost efficiency

@@ -30,8 +30,8 @@ export class ScotusticianIngestStack extends Stack {
     Tags.of(this).add('Project', 'scotustician');
     Tags.of(this).add('Stack', 'ingest');
 
-    // Optimized for c5.large (2 vCPUs, 4GB RAM) - DLT-based ingestion
-    const taskCpu = 1024;  // 1 vCPU for DLT pipeline
+    // Optimized for c5.large (2 vCPUs, 4GB RAM) - Rate-limited API ingestion
+    const taskCpu = 1024;  // 1 vCPU for API requests
     const taskMemory = 3072;  // 3GB memory, leaving 1GB for system overhead
 
   const bucket = Bucket.fromBucketName(this, 'ScotusticianBucket', 'scotustician');
@@ -76,16 +76,11 @@ export class ScotusticianIngestStack extends Stack {
         BUCKET_URL: `s3://${bucket.bucketName}`,
         START_TERM: currentYear.toString(),
         END_TERM: currentYear.toString(),
-        DLT_PROJECT_DIR: '/code',
-        DLT_PIPELINE_DIR: '/code/.dlt',
         AWS_DEFAULT_REGION: 'us-east-1',
-        // c5.large optimizations
+        // Rate-limited API optimizations
         MAX_WORKERS: '2',
-        BATCH_SIZE: '5',
         REQUEST_TIMEOUT: '30',
         MAX_RETRIES: '3',
-        MEMORY_LIMIT_MB: '3072',
-        MODE: 'ingest',
       },
     });
 
