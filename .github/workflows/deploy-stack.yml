@@ -109,6 +109,10 @@ jobs:
                 aws cloudformation wait stack-rollback-complete --stack-name $STACK_NAME 2>/dev/null
                 break
                 ;;
+              "CREATE_IN_PROGRESS")
+                echo "Stack is being created, waiting for completion..."
+                aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || true
+                ;;
               "UPDATE_IN_PROGRESS")
                 echo "Waiting for update to complete..."
                 aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || true
@@ -127,8 +131,15 @@ jobs:
                 echo "ERROR: Stack in ROLLBACK_COMPLETE state - manual intervention required"
                 exit 1
                 ;;
-              "CREATE_FAILED"|"DELETE_FAILED")
-                echo "ERROR: Stack in failed state: $STACK_STATUS"
+              "CREATE_FAILED")
+                echo "Stack creation failed, deleting failed stack..."
+                aws cloudformation delete-stack --stack-name $STACK_NAME 2>/dev/null || true
+                aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+                echo "Failed stack deleted, ready for fresh deployment"
+                break
+                ;;
+              "DELETE_FAILED")
+                echo "ERROR: Stack in DELETE_FAILED state - manual intervention required"
                 exit 1
                 ;;
               *)
