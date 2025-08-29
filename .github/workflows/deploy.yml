@@ -71,6 +71,7 @@ jobs:
               - 'infrastructure/lib/scotustician-transformers-stack.ts'
               - 'infrastructure/lib/scotustician-clustering-stack.ts'
               - 'infrastructure/bin/**'
+              - 'infrastructure/lambda/**'
               - 'database/**'
               - '.github/workflows/**'
 
