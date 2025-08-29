@@ -71,7 +71,7 @@ export class ScotusticianClusteringStack extends Stack {
       directory: '../services/clustering',
       buildArgs: {
         BUILDKIT_INLINE_CACHE: '1',
-        BUILD_DATE: new Date().toISOString(),
+        VERSION: process.env.VERSION || 'latest',
       },
     });
 
@@ -124,7 +124,7 @@ export class ScotusticianClusteringStack extends Stack {
   instanceTypes: [InstanceType.of(InstanceClass.C5, InstanceSize.LARGE)],
       minvCpus: 0, // Scale to zero when idle
       maxvCpus: 4, // Limited capacity for ad-hoc analysis
-      computeEnvironmentName: 'scotustician-clustering-spot',
+      computeEnvironmentName: 'scotustician-clustering-cpu-spot',
       securityGroups: [clusteringSecurityGroup],
     });
 
@@ -136,13 +136,13 @@ export class ScotusticianClusteringStack extends Stack {
           order: 1,
         },
       ],
-      jobQueueName: 'scotustician-clustering-queue',
+      jobQueueName: 'scotustician-clustering-cpu-queue',
       priority: 1,
     });
 
     // Create Batch job definition for case clustering
     const clusteringJobDefinition = new EcsJobDefinition(this, 'ClusteringJobDefinition', {
-      jobDefinitionName: 'scotustician-clustering',
+      jobDefinitionName: 'scotustician-clustering-cpu',
       container: new EcsEc2ContainerDefinition(this, 'ClusteringJobContainer', {
         image: ContainerImage.fromDockerImageAsset(clusteringImage),
         memory: Size.mebibytes(8192),
@@ -169,7 +169,7 @@ export class ScotusticianClusteringStack extends Stack {
 
     // Create log group for clustering tasks
     const clusteringLogGroup = new LogGroup(this, 'ClusteringLogGroup', {
-      logGroupName: '/ecs/case-clustering',
+      logGroupName: '/ecs/scotustician-clustering',
       removalPolicy: RemovalPolicy.DESTROY,
       retention: RetentionDays.ONE_WEEK,
     });

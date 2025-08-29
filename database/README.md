@@ -55,6 +55,8 @@ infrastructure/
 
 All deployment is managed by the CDK app in `infrastructure/`. You do not need to deploy this directory directly; instead, run or update the CDK stack in `infrastructure/` to apply changes.
 
+The database stack uses deterministic resource naming to ensure reliable deployments without requiring downstream stack deletions. Changes to database schema or dbt models trigger automatic redeployment via CI/CD.
+
 ## Database Access
 
 - The RDS instance is private and only accessible from within the VPC.
@@ -153,7 +155,7 @@ done
 
 ## CI/CD
 
-This app is deployed automatically using a GitHub Actions workflow triggered on push or pull request to `main`.
+This app is deployed automatically using a GitHub Actions workflow triggered on push or pull request to `main`. The database stack deploys as part of the overall infrastructure orchestration with deterministic resource naming to ensure consistent deployments.
 
 ## Database Access
 

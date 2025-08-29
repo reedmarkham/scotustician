@@ -53,25 +53,30 @@ export class ScotusticianSharedStack extends Stack {
       ],
     });
 
-    this.vpc.addGatewayEndpoint('S3Endpoint', {
+    const s3Endpoint = this.vpc.addGatewayEndpoint('S3Endpoint', {
       service: GatewayVpcEndpointAwsService.S3,
     });
+    s3Endpoint.node.addMetadata('aws:cdk:physical-name', 'scotustician-s3-endpoint');
 
-    this.vpc.addInterfaceEndpoint('EcrEndpoint', {
+    const ecrEndpoint = this.vpc.addInterfaceEndpoint('EcrEndpoint', {
       service: InterfaceVpcEndpointAwsService.ECR,
     });
+    ecrEndpoint.node.addMetadata('aws:cdk:physical-name', 'scotustician-ecr-endpoint');
 
-    this.vpc.addInterfaceEndpoint('EcrDkrEndpoint', {
+    const ecrDkrEndpoint = this.vpc.addInterfaceEndpoint('EcrDkrEndpoint', {
       service: InterfaceVpcEndpointAwsService.ECR_DOCKER,
     });
+    ecrDkrEndpoint.node.addMetadata('aws:cdk:physical-name', 'scotustician-ecr-dkr-endpoint');
 
-    this.vpc.addInterfaceEndpoint('LogsEndpoint', {
+    const logsEndpoint = this.vpc.addInterfaceEndpoint('LogsEndpoint', {
       service: InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
     });
+    logsEndpoint.node.addMetadata('aws:cdk:physical-name', 'scotustician-logs-endpoint');
 
-    this.vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
+    const secretsEndpoint = this.vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
       service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
     });
+    secretsEndpoint.node.addMetadata('aws:cdk:physical-name', 'scotustician-secrets-endpoint');
 
     // Create separate clusters for different workloads
     this.ingestCluster = new Cluster(this, 'IngestCluster', {

@@ -41,7 +41,7 @@ export class ScotusticianIngestStack extends Stack {
       directory: '../services/ingest',
       file: 'Dockerfile',
       buildArgs: {
-        BUILD_TIMESTAMP: Date.now().toString()
+        VERSION: process.env.VERSION || 'latest'
       },
     });
 
@@ -97,7 +97,7 @@ export class ScotusticianIngestStack extends Stack {
     });
 
     const logGroup = new LogGroup(this, 'IngestLogGroup', {
-      logGroupName: '/ecs/ingest',
+      logGroupName: '/ecs/scotustician-ingest',
       removalPolicy: RemovalPolicy.DESTROY,
       retention: RetentionDays.ONE_WEEK,
     });

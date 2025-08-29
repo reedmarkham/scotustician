@@ -221,9 +221,15 @@ The project deploys six AWS CDK stacks via GitHub Actions:
 - dbt on ECS Fargate for weekly analytics transformations
 - Bronze/Silver/Gold medallion architecture for data analytics
 
+**Deployment Orchestration:**
+- Stacks deploy in dependency order: Shared → DB → Service stacks → Orchestration
+- Deterministic resource ARNs prevent fragmented deployments
+- No downstream stack deletions required for updates
+- Automatic rollback recovery and drift detection
+
 ## CI/CD
 
-On commits to `main`, GitHub Actions (`.github/workflows/deploy.yml`) detects changes and deploys the affected stacks automatically.
+On commits to `main`, GitHub Actions (`.github/workflows/deploy.yml`) detects changes and deploys the affected stacks automatically. The deployment workflow uses deterministic resource naming to enable smooth stack updates without requiring downstream stack deletions.
 
 ---
 ## Appendix

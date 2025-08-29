@@ -179,6 +179,7 @@ export class ScotusticianOrchestrationStack extends Stack {
         'inputParams.$': '$.inputParams',
         'costBaseline.$': '$.costBaseline',
       },
+      resultPath: '$',
     });
 
     const initializePolling = new Pass(this, 'InitializePolling', {
@@ -340,7 +341,7 @@ export class ScotusticianOrchestrationStack extends Stack {
       parameters: {
         'executionStartTime.$': '$.inputParams.executionStartTime',
         'executionEndTime.$': '$$.State.EnteredTime',
-        'durationMinutes.$': 'States.MathAdd(States.MathDiv(States.MathAdd($$.State.EnteredTime, States.MathMultiply($.inputParams.executionStartTime, -1)), 60000), 0)',
+        'durationMinutes.$': 'States.MathDiv(States.MathAdd($$.State.EnteredTime, States.MathMultiply($.inputParams.executionStartTime, -1)), 60000)',
         'finalResults.$': '$'
       },
       resultPath: '$.executionMetrics'

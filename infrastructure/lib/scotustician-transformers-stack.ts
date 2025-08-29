@@ -100,7 +100,7 @@ export class ScotusticianTransformersStack extends Stack {
         : [InstanceType.of(InstanceClass.C5, InstanceSize.XLARGE2)],
       minvCpus: 0,
       maxvCpus: useGpu ? 4 : 8, // Scale to zero when no jobs, max capacity for workloads
-      computeEnvironmentName: useGpu ? 'scotustician-spot-gpu' : 'scotustician-spot-cpu',
+      computeEnvironmentName: `scotustician-transformers-${useGpu ? 'gpu' : 'cpu'}-spot`,
       securityGroups: [batchSecurityGroup],
     });
 
@@ -112,7 +112,7 @@ export class ScotusticianTransformersStack extends Stack {
           order: 1,
         },
       ],
-      jobQueueName: useGpu ? 'scotustician-embedding-gpu-queue' : 'scotustician-embedding-cpu-queue',
+      jobQueueName: `scotustician-transformers-${useGpu ? 'gpu' : 'cpu'}-queue`,
       priority: 1,
     });
 
@@ -120,7 +120,7 @@ export class ScotusticianTransformersStack extends Stack {
           directory: '../services/transformers',
           buildArgs: {
             BUILDKIT_INLINE_CACHE: '1',
-            BUILD_DATE: new Date().toISOString(),
+            VERSION: process.env.VERSION || 'latest',
           },
         });
 
@@ -275,7 +275,7 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     // Create Batch job definition for processing (GPU or CPU based on context)
-    const jobDefinitionName = useGpu ? 'scotustician-embedding-gpu' : 'scotustician-embedding-cpu';
+    const jobDefinitionName = `scotustician-transformers-${useGpu ? 'gpu' : 'cpu'}`;
     const batchJobDefinition = new EcsJobDefinition(this, 'EmbeddingJobDefinition', {
       jobDefinitionName,
       container: new EcsEc2ContainerDefinition(this, 'EmbeddingJobContainer', {
@@ -335,7 +335,7 @@ export class ScotusticianTransformersStack extends Stack {
     });
 
     const logGroup = new LogGroup(this, 'TransformersLogGroup', {
-      logGroupName: '/ecs/transformers',
+      logGroupName: '/ecs/scotustician-transformers',
       removalPolicy: RemovalPolicy.DESTROY,
       retention: RetentionDays.ONE_WEEK,
     });
