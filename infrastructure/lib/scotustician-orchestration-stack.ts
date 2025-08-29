@@ -6,7 +6,6 @@ import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { Rule, Schedule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import { Topic } from 'aws-cdk-lib/aws-sns';
-import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
 import { Function as LambdaFunction, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
 import {
   Stack, StackProps, DefaultStackSynthesizer, Tags, Duration, CfnOutput
@@ -73,11 +72,10 @@ export class ScotusticianOrchestrationStack extends Stack {
       },
     });
 
-    const dataVerificationFunction = new PythonFunction(this, 'DataVerificationFunction', {
+    const dataVerificationFunction = new LambdaFunction(this, 'DataVerificationFunction', {
       runtime: Runtime.PYTHON_3_11,
-      handler: 'handler',
-      entry: path.join(__dirname, '../lambda'),
-      index: 'data_verification.py',
+      handler: 'data_verification.handler',
+      code: Code.fromAsset(path.join(__dirname, '../lambda')),
       timeout: Duration.minutes(5),
     });
 
