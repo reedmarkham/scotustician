@@ -92,8 +92,8 @@ jobs:
     secrets: inherit
 
   deploy_transformers:
-    needs: [plan, deploy_shared, deploy_ingest]
-    if: needs.plan.outputs.deploy_transformers == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') && (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped')
+    needs: [plan, deploy_shared]
+    if: needs.plan.outputs.deploy_transformers == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianTransformersStack"
@@ -101,8 +101,8 @@ jobs:
     secrets: inherit
 
   deploy_clustering:
-    needs: [plan, deploy_shared, deploy_transformers]
-    if: needs.plan.outputs.deploy_clustering == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') && (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped')
+    needs: [plan, deploy_shared]
+    if: needs.plan.outputs.deploy_clustering == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianClusteringStack"
