@@ -191,6 +191,14 @@ export class ScotusticianOrchestrationStack extends Stack {
       resultPath: '$.inputParams'
     });
 
+    const continueAfterIngest = new Pass(this, 'ContinueAfterIngest', {
+      comment: 'Continue pipeline after ingest completion'
+    });
+
+    // Connect success path from evaluateIngestTaskResult to continue the pipeline
+    const ingestSuccess = new Pass(this, 'IngestTaskSuccess', { 
+      resultPath: '$.ingestResult' 
+    }).next(continueAfterIngest);
 
     const evaluateIngestTaskResult = new Choice(this, 'EvaluateIngestTaskResult')
       .when(
@@ -198,7 +206,7 @@ export class ScotusticianOrchestrationStack extends Stack {
           Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
           Condition.numberEquals('$.ingestTaskStatus.Tasks[0].Containers[0].ExitCode', 0)
         ),
-        new Pass(this, 'IngestTaskSuccess', { resultPath: '$.ingestResult' })
+        ingestSuccess
       )
       .when(
         Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'STOPPED'),
@@ -219,7 +227,7 @@ export class ScotusticianOrchestrationStack extends Stack {
           Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
           Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'PENDING')
         ),
-        waitBeforeRetry.next(incrementRetryCount).next(checkIngestTaskStatus)
+        waitBeforeRetry.next(incrementRetryCount)
       )
       .otherwise(
         new Fail(this, 'IngestTaskUnexpectedStatus', {
@@ -319,15 +327,23 @@ export class ScotusticianOrchestrationStack extends Stack {
       resultPath: '$.executionMetrics'
     });
 
+    const continueAfterEmbeddings = new Pass(this, 'ContinueAfterEmbeddings', {
+      comment: 'Continue pipeline after embeddings verification'
+    });
+
+    const continueAfterClustering = new Pass(this, 'ContinueAfterClustering', {
+      comment: 'Continue pipeline after clustering completion'
+    });
+
     const s3DataCheck = new Choice(this, 'S3DataCheck')
-      .when(Condition.booleanEquals('$.s3Verification.Payload.verified', true), runEmbeddingsTask)
+      .when(Condition.booleanEquals('$.s3Verification.Payload.verified', true), runEmbeddingsTask.next(continueAfterEmbeddings))
       .otherwise(new Fail(this, 'S3VerificationFailed', {
         cause: 'S3 data verification failed',
         error: 'DATA_VERIFICATION_ERROR',
       }));
 
     const embeddingsDataCheck = new Choice(this, 'EmbeddingsDataCheck')
-      .when(Condition.booleanEquals('$.embeddingsVerification.Payload.verified', true), parallelClustering)
+      .when(Condition.booleanEquals('$.embeddingsVerification.Payload.verified', true), parallelClustering.next(continueAfterClustering))
       .otherwise(new Fail(this, 'EmbeddingsVerificationFailed', {
         cause: 'Embeddings verification failed',
         error: 'DATA_VERIFICATION_ERROR',
@@ -336,20 +352,34 @@ export class ScotusticianOrchestrationStack extends Stack {
     //
     // Definition
     //
+    // Create the polling loop chain
+    const pollingChain = checkIngestTaskStatus.next(evaluateIngestTaskResult);
+    
+    // Connect the retry flow back to the polling chain
+    incrementRetryCount.next(pollingChain);
+
     const definition = extractInputParams
       .next(costBaselineTask)
       .next(startIngestTask)
       .next(initializePolling)
-      .next(checkIngestTaskStatus)
-      .next(evaluateIngestTaskResult.afterwards()
-        .next(midPipelineCostCheckTask)
-        .next(verifyS3DataTask)
-        .next(s3DataCheck.afterwards()
-          .next(verifyEmbeddingsTask)
-          .next(postEmbeddingsCostCheckTask)
-          .next(embeddingsDataCheck.afterwards()
-            .next(finalCostReportTask)
-            .next(calculateExecutionDuration))));
+      .next(pollingChain);
+    
+    // Chain the rest after ingest completion
+    continueAfterIngest
+      .next(midPipelineCostCheckTask)
+      .next(verifyS3DataTask)
+      .next(s3DataCheck);
+    
+    // Chain after embeddings verification 
+    continueAfterEmbeddings
+      .next(verifyEmbeddingsTask)
+      .next(postEmbeddingsCostCheckTask)
+      .next(embeddingsDataCheck);
+    
+    // Chain final steps after clustering
+    continueAfterClustering
+      .next(finalCostReportTask)
+      .next(calculateExecutionDuration);
 
     //
     // State Machine
