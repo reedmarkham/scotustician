@@ -167,7 +167,7 @@ export class ScotusticianOrchestrationStack extends Stack {
     const incrementRetryCount = new Pass(this, 'IncrementRetryCount', {
       parameters: {
         'retryCount.$': 'States.MathAdd($.retryCount, 1)',
-        'waitTime.$': 'States.MathMultiply($.waitTime, 2)',
+        'waitTime': 60,
         'maxRetries': 8,
         'ingestTaskStart.$': '$.ingestTaskStart',
         'inputParams.$': '$.inputParams',
@@ -335,7 +335,6 @@ export class ScotusticianOrchestrationStack extends Stack {
       parameters: {
         'executionStartTime.$': '$.inputParams.executionStartTime',
         'executionEndTime.$': '$$.State.EnteredTime',
-        'durationMinutes.$': 'States.MathDiv(States.MathAdd($$.State.EnteredTime, States.MathMultiply($.inputParams.executionStartTime, -1)), 60000)',
         'finalResults.$': '$'
       },
       resultPath: '$.executionMetrics'
