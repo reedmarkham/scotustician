@@ -265,9 +265,13 @@ def main():
             logger.info(f"Load package: {package.load_id}")
             if hasattr(package, 'jobs') and package.jobs:
                 for job in package.jobs:
-                    if job.job_file_info:
+                    # Check if job is a string or has job_file_info attribute
+                    if hasattr(job, 'job_file_info') and job.job_file_info:
                         table_name = job.job_file_info.table_name
                         logger.info(f"  Table '{table_name}': {job.job_file_info.file_size} bytes")
+                    else:
+                        # Log the job if it's not the expected format for debugging
+                        logger.debug(f"  Job: {job} (type: {type(job).__name__})")
         
         # Show pipeline state info
         logger.info(f"Pipeline state keys: {list(pipeline.state.keys())}")
