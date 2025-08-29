@@ -30,6 +30,11 @@ export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly vpcId: string;
   readonly publicSubnetIds: string[];
   readonly privateSubnetIds: string[];
+  readonly tsnePerplexity?: string;
+  readonly minClusterSize?: string;
+  readonly maxConcurrentJobs?: string;
+  readonly s3BucketName?: string;
+  readonly scheduleEnabled?: boolean;
 }
 
 export class ScotusticianOrchestrationStack extends Stack {
@@ -84,12 +89,13 @@ export class ScotusticianOrchestrationStack extends Stack {
     }));
     this.notificationTopic.grantPublish(costTrackingFunction);
 
+    const bucketName = props.s3BucketName || 'scotustician';
     dataVerificationFunction.addToRolePolicy(new PolicyStatement({
       effect: Effect.ALLOW,
       actions: ['s3:ListBucket', 's3:GetObject', 'secretsmanager:GetSecretValue'],
       resources: [
-        'arn:aws:s3:::scotustician',
-        'arn:aws:s3:::scotustician/*',
+        `arn:aws:s3:::${bucketName}`,
+        `arn:aws:s3:::${bucketName}/*`,
         `arn:aws:secretsmanager:${this.region}:${this.account}:secret:scotustician-db-credentials*`,
       ],
     }));
@@ -136,22 +142,8 @@ export class ScotusticianOrchestrationStack extends Stack {
       resultPath: '$.ingestTaskStart',
     });
 
-    // Use a simpler approach - wait a fixed time and then check status once
-    const waitForIngestCompletion = new Wait(this, 'WaitForIngestCompletion', {
-      time: WaitTime.duration(Duration.minutes(10)), // Wait 10 minutes for ingest to complete
-    });
-
-    // Extract input parameters for dynamic configuration
-  const extractInputParams = new Pass(this, 'ExtractInputParams', {
-      parameters: {
-        'startTerm.$': '$.startTerm',
-        'endTerm.$': '$.endTerm',
-        'mode.$': '$.mode'
-      },
-      resultPath: '$.inputParams'
-    });
-
-  const checkIngestTaskFinalStatus = new CallAwsService(this, 'CheckIngestTaskFinalStatus', {
+    // Exponential backoff polling for ingest completion
+    const checkIngestTaskStatus = new CallAwsService(this, 'CheckIngestTaskStatus', {
       service: 'ecs',
       action: 'describeTasks',
       parameters: {
@@ -161,6 +153,44 @@ export class ScotusticianOrchestrationStack extends Stack {
       iamResources: ['*'],
       resultPath: '$.ingestTaskStatus',
     });
+
+    const waitBeforeRetry = new Wait(this, 'WaitBeforeRetry', {
+      time: WaitTime.secondsPath('$.waitTime'),
+    });
+
+    const incrementRetryCount = new Pass(this, 'IncrementRetryCount', {
+      parameters: {
+        'retryCount.$': 'States.MathAdd($.retryCount, 1)',
+        'waitTime.$': 'States.MathMultiply($.waitTime, 2)',
+        'maxRetries': 8,
+        'ingestTaskStart.$': '$.ingestTaskStart',
+        'inputParams.$': '$.inputParams',
+        'costBaseline.$': '$.costBaseline',
+      },
+    });
+
+    const initializePolling = new Pass(this, 'InitializePolling', {
+      parameters: {
+        'retryCount': 0,
+        'waitTime': 30,
+        'maxRetries': 8,
+        'ingestTaskStart.$': '$.ingestTaskStart',
+        'inputParams.$': '$.inputParams',
+        'costBaseline.$': '$.costBaseline',
+      },
+    });
+
+    // Extract input parameters for dynamic configuration
+  const extractInputParams = new Pass(this, 'ExtractInputParams', {
+      parameters: {
+        'startTerm.$': '$.startTerm',
+        'endTerm.$': '$.endTerm',
+        'mode.$': '$.mode',
+        'executionStartTime.$': '$$.Execution.StartTime'
+      },
+      resultPath: '$.inputParams'
+    });
+
 
     const evaluateIngestTaskResult = new Choice(this, 'EvaluateIngestTaskResult')
       .when(
@@ -178,11 +208,18 @@ export class ScotusticianOrchestrationStack extends Stack {
         })
       )
       .when(
-        Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
+        Condition.numberGreaterThanEquals('$.retryCount', 8),
         new Fail(this, 'IngestTaskTimeout', {
-          cause: 'Ingest task did not complete within 10 minute timeout',
+          cause: 'Ingest task did not complete within maximum retry attempts',
           error: 'INGEST_TASK_TIMEOUT',
         })
+      )
+      .when(
+        Condition.or(
+          Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'RUNNING'),
+          Condition.stringEquals('$.ingestTaskStatus.Tasks[0].LastStatus', 'PENDING')
+        ),
+        waitBeforeRetry.next(incrementRetryCount).next(checkIngestTaskStatus)
       )
       .otherwise(
         new Fail(this, 'IngestTaskUnexpectedStatus', {
@@ -191,9 +228,15 @@ export class ScotusticianOrchestrationStack extends Stack {
         })
       );
 
+    const midPipelineCostCheckTask = new LambdaInvoke(this, 'MidPipelineCostCheck', {
+      lambdaFunction: costTrackingFunction,
+      payload: TaskInput.fromObject({ stage: 'mid_pipeline', notify: false }),
+      resultPath: '$.midPipelineCost',
+    });
+
     const verifyS3DataTask = new LambdaInvoke(this, 'VerifyS3Data', {
       lambdaFunction: dataVerificationFunction,
-      payload: TaskInput.fromObject({ type: 's3_ingest', bucket: 'scotustician', prefix: 'raw/oa/' }),
+      payload: TaskInput.fromObject({ type: 's3_ingest', bucket: bucketName, prefix: 'raw/oa/' }),
       resultPath: '$.s3Verification',
     });
 
@@ -211,6 +254,12 @@ export class ScotusticianOrchestrationStack extends Stack {
       resultPath: '$.embeddingsVerification',
     });
 
+    const postEmbeddingsCostCheckTask = new LambdaInvoke(this, 'PostEmbeddingsCostCheck', {
+      lambdaFunction: costTrackingFunction,
+      payload: TaskInput.fromObject({ stage: 'post_embeddings', notify: false }),
+      resultPath: '$.postEmbeddingsCost',
+    });
+
   const runBasicClusteringTask = new BatchSubmitJob(this, 'RunBasicClusteringTask', {
       jobName: 'scotustician-basic-clustering-stepfunctions',
       jobQueueArn: props.clusteringJobQueueArn,
@@ -218,10 +267,10 @@ export class ScotusticianOrchestrationStack extends Stack {
   integrationPattern: IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
-          'S3_BUCKET': 'scotustician',
+          'S3_BUCKET': bucketName,
           'OUTPUT_PREFIX': 'analysis/case-clustering',
-          'TSNE_PERPLEXITY': '30',
-          'MIN_CLUSTER_SIZE': '5',
+          'TSNE_PERPLEXITY': props.tsnePerplexity || '30',
+          'MIN_CLUSTER_SIZE': props.minClusterSize || '5',
           'START_TERM.$': '$.inputParams.startTerm',
           'END_TERM.$': '$.inputParams.endTerm',
         },
@@ -236,13 +285,13 @@ export class ScotusticianOrchestrationStack extends Stack {
   integrationPattern: IntegrationPattern.RUN_JOB,
       containerOverrides: {
         environment: {
-          'S3_BUCKET': 'scotustician',
+          'S3_BUCKET': bucketName,
           'BASE_OUTPUT_PREFIX': 'analysis/case-clustering-by-term',
-          'TSNE_PERPLEXITY': '30',
-          'MIN_CLUSTER_SIZE': '5',
+          'TSNE_PERPLEXITY': props.tsnePerplexity || '30',
+          'MIN_CLUSTER_SIZE': props.minClusterSize || '5',
           'START_TERM.$': '$.inputParams.startTerm',
           'END_TERM.$': '$.inputParams.endTerm',
-          'MAX_CONCURRENT_JOBS': '3',
+          'MAX_CONCURRENT_JOBS': props.maxConcurrentJobs || '3',
         },
       },
       resultPath: '$.termByTermClusteringResult',
@@ -258,6 +307,16 @@ export class ScotusticianOrchestrationStack extends Stack {
       lambdaFunction: costTrackingFunction,
       payload: TaskInput.fromObject({ stage: 'complete', notify: true }),
       resultPath: '$.finalCostReport',
+    });
+
+    const calculateExecutionDuration = new Pass(this, 'CalculateExecutionDuration', {
+      parameters: {
+        'executionStartTime.$': '$.inputParams.executionStartTime',
+        'executionEndTime.$': '$$.State.EnteredTime',
+        'durationMinutes.$': 'States.MathAdd(States.MathDiv(States.MathAdd($$.State.EnteredTime, States.MathMultiply($.inputParams.executionStartTime, -1)), 60000), 0)',
+        'finalResults.$': '$'
+      },
+      resultPath: '$.executionMetrics'
     });
 
     const s3DataCheck = new Choice(this, 'S3DataCheck')
@@ -280,14 +339,17 @@ export class ScotusticianOrchestrationStack extends Stack {
     const definition = extractInputParams
       .next(costBaselineTask)
       .next(startIngestTask)
-      .next(waitForIngestCompletion)
-      .next(checkIngestTaskFinalStatus)
+      .next(initializePolling)
+      .next(checkIngestTaskStatus)
       .next(evaluateIngestTaskResult.afterwards()
+        .next(midPipelineCostCheckTask)
         .next(verifyS3DataTask)
         .next(s3DataCheck.afterwards()
           .next(verifyEmbeddingsTask)
+          .next(postEmbeddingsCostCheckTask)
           .next(embeddingsDataCheck.afterwards()
-            .next(finalCostReportTask))));
+            .next(finalCostReportTask)
+            .next(calculateExecutionDuration))));
 
     //
     // State Machine
@@ -308,46 +370,73 @@ export class ScotusticianOrchestrationStack extends Stack {
         'ecs:RunTask',
         'ecs:DescribeTasks',
         'ecs:StopTask',
+      ],
+      resources: [
+        props.ingestClusterArn,
+        props.ingestTaskDefinitionArn,
+        `arn:aws:ecs:${this.region}:${this.account}:task/${props.ingestClusterArn.split('/')[1]}/*`,
+      ],
+    }));
+
+    this.stateMachine.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
         'batch:SubmitJob',
         'batch:DescribeJobs',
         'batch:TerminateJob',
-        'iam:PassRole',
       ],
-      resources: ['*'],
+      resources: [
+        props.transformersJobQueueArn,
+        props.transformersJobDefinitionArn,
+        props.clusteringJobQueueArn,
+        props.clusteringJobDefinitionArn,
+      ],
+    }));
+
+    this.stateMachine.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['iam:PassRole'],
+      resources: [
+        `arn:aws:iam::${this.account}:role/ecsTaskExecutionRole`,
+        `arn:aws:iam::${this.account}:role/*BatchExecutionRole*`,
+      ],
     }));
 
     //
     // Schedule for current year processing during SCOTUS term
     // First Monday in October through Second Friday in July
     //
-    const currentYear = new Date().getFullYear().toString();
-    const scheduleRule = new Rule(this, 'CurrentYearScheduleRule', {
-      schedule: Schedule.cron({
-        minute: '0',
-        hour: '14', // 10 AM ET (14:00 UTC)
-        weekDay: 'MON,THU',
-        month: 'OCT-DEC,JAN-JUL', // Supreme Court term months
-      }),
-      description: 'Schedule current year data processing twice weekly during SCOTUS term (Oct-Jul)',
-    });
+    if (props.scheduleEnabled !== false) {
+      const currentYear = new Date().getFullYear().toString();
+      const scheduleRule = new Rule(this, 'CurrentYearScheduleRule', {
+        schedule: Schedule.cron({
+          minute: '0',
+          hour: '14', // 10 AM ET (14:00 UTC)
+          weekDay: 'MON,THU',
+          month: 'OCT-DEC,JAN-JUL', // Supreme Court term months
+        }),
+        description: 'Schedule current year data processing twice weekly during SCOTUS term (Oct-Jul)',
+      });
 
-    scheduleRule.addTarget(new SfnStateMachine(this.stateMachine, {
-      input: RuleTargetInput.fromObject({
-        startTerm: currentYear,
-        endTerm: currentYear,
-        mode: 'scheduled'
-      })
-    }));
+      scheduleRule.addTarget(new SfnStateMachine(this.stateMachine, {
+        input: RuleTargetInput.fromObject({
+          startTerm: currentYear,
+          endTerm: currentYear,
+          mode: 'scheduled'
+        })
+      }));
+
+      new CfnOutput(this, 'ScheduleRuleArn', {
+        value: scheduleRule.ruleArn,
+        description: 'EventBridge Schedule Rule ARN for current year processing',
+      });
+    }
 
     new CfnOutput(this, 'StateMachineArn', {
       value: this.stateMachine.stateMachineArn,
       description: 'Step Functions State Machine ARN',
     });
 
-    new CfnOutput(this, 'ScheduleRuleArn', {
-      value: scheduleRule.ruleArn,
-      description: 'EventBridge Schedule Rule ARN for current year processing',
-    });
 
     new CfnOutput(this, 'NotificationTopicArn', {
       value: this.notificationTopic.topicArn,
