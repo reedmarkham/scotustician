@@ -1,30 +1,24 @@
-import os
-import logging
-import uuid
-import signal
-import sys
+import os, logging, uuid, signal, sys
 from datetime import datetime
-from typing import Iterator, Dict, Any, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Iterator, Dict, Any
+
 import dlt
 from dlt.sources.helpers import requests
-from dlt.extract.incremental import Incremental
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-# Configuration optimized for c5.2xlarge (8 vCPUs, 16GB RAM)
+# Configuration
 BUCKET = os.getenv("S3_BUCKET", "scotustician")
 START_TERM = int(os.getenv("START_TERM", 1980))
 END_TERM = int(os.getenv("END_TERM", 2025))
-MODE = os.getenv("MODE", "ingest")  # "ingest" or "test"
 
-# Performance tuning for c5.large (2 vCPUs, 4GB RAM)
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))  # Use 2 workers max for 2 vCPUs
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 5))  # Smaller batches for memory efficiency
+# Performance tuning
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", 2))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 5))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 30))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
-MEMORY_LIMIT_MB = int(os.getenv("MEMORY_LIMIT_MB", 3072))  # Reserve 1GB for system
+MEMORY_LIMIT_MB = int(os.getenv("MEMORY_LIMIT_MB", 3072))
 
 OYEZ_CASES_TERM_PREFIX = 'https://api.oyez.org/cases?per_page=0&filter=term:'
 OYEZ_API_BASE = 'https://api.oyez.org'
@@ -33,7 +27,6 @@ OYEZ_API_BASE = 'https://api.oyez.org'
 pipeline_instance = None
 
 def log_junk_data(term: int, item: Any, context: str):
-    """Log junk data to pipeline - equivalent to original log_junk_to_s3"""
     if not pipeline_instance:
         return
         
@@ -43,7 +36,6 @@ def log_junk_data(term: int, item: Any, context: str):
         "term": term,
         "context": context,
         "item": str(item)[:10000],  # Truncate very large items
-        "timestamp": datetime.now().isoformat(),
         "_dlt_extracted_at": datetime.now()
     }
     
@@ -57,12 +49,12 @@ def log_junk_data(term: int, item: Any, context: str):
     
     # Run the junk data pipeline
     try:
-        load_info = pipeline_instance.run(single_junk_record())
+        pipeline_instance.run(single_junk_record())
         logger.info(f"Logged junk data: {context} for term {term}")
     except Exception as e:
         logger.error(f"Failed to log junk data: {e}")
 
-def signal_handler(signum, frame):
+def signal_handler(signum, _):
     """Handle shutdown signals gracefully"""
     signal_name = signal.Signals(signum).name
     logger.info(f"Received {signal_name} signal. Shutting down gracefully...")
@@ -158,18 +150,15 @@ def oyez_scotus_source():
                             "case_id": case.get('ID'),
                             "docket_number": docket_number,
                             "session": idx,
-                            "_dlt_extracted_at": current_time,
-                            "_dlt_load_id": f"{term}_{docket_number}_{oa_id}",
-                            "scotus_metadata": {
-                                "extraction_timestamp": current_time.isoformat(),
-                                "source": "oyez_api",
-                                "version": "dlt_v1"
-                            }
+                            "_dlt_extracted_at": current_time,  # Required for dlt incremental loading
+                            "extraction_id": f"{term}_{docket_number}_{oa_id}"
                         })
                         
-                        processed_count += 1
-                        yield oa_data
-                        logger.info(f"Processed OA {oa_id} for case {docket_number} (term {term})")
+                        # Only yield if this record is newer than last processed (incremental loading)
+                        if current_time >= updated_at.last_value:
+                            processed_count += 1
+                            yield oa_data
+                            logger.info(f"Processed OA {oa_id} for case {docket_number} (term {term})")
                         
                     except Exception as e:
                         logger.error(f"Failed to process OA {oa_id}: {e}")
@@ -186,63 +175,24 @@ def oyez_scotus_source():
         
         timestamp = datetime.now()
         summary = {
-            "timestamp": timestamp.strftime('%Y%m%d_%H%M%S'),
-            "extraction_start": timestamp.isoformat(),
-            "source": "oyez_api",
-            "pipeline": "dlt_migration",
+            "_dlt_extracted_at": timestamp,  # Required for dlt incremental loading
             "start_term": START_TERM,
-            "end_term": END_TERM,
-            "incremental_load": True,
-            "_dlt_extracted_at": timestamp
+            "end_term": END_TERM
         }
         
         yield summary
 
     return [oral_arguments, ingestion_summary]
 
-def run_test_pipeline():
-    """Run test pipeline with limited data"""
-    logger.info("Running test pipeline")
-    
-    pipeline = dlt.pipeline(
-        pipeline_name="scotustician_test",
-        destination="filesystem",
-        dataset_name="test_data"
-    )
-    
-    # Override term range for testing
-    global START_TERM, END_TERM
-    original_start, original_end = START_TERM, END_TERM
-    START_TERM = 2023
-    END_TERM = 2024
-    
-    try:
-        source = oyez_scotus_source()
-        load_info = pipeline.run(source)
-        
-        logger.info("Test pipeline completed successfully!")
-        logger.info(f"Dataset: {load_info.dataset_name}")
-        
-    except Exception as e:
-        logger.error(f"Test pipeline failed: {e}", exc_info=True)
-        raise
-    finally:
-        # Restore original values
-        START_TERM, END_TERM = original_start, original_end
-
 def main():
     """Main pipeline execution"""
     global pipeline_instance
     
     setup_signal_handlers()
+
+    logger.info("Starting Oyez API ingestion")
     
-    if MODE == "test":
-        run_test_pipeline()
-        return
-    
-    logger.info("Starting dlt-based Oyez ingestion pipeline with incremental loading")
-    
-    # Create pipeline - configuration loaded from .dlt/ directory
+    # Configuration loaded from .dlt/ directory
     pipeline = dlt.pipeline(
         pipeline_name="scotustician_ingest",
         destination="filesystem",
