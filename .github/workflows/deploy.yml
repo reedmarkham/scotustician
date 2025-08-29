@@ -110,8 +110,8 @@ jobs:
     secrets: inherit
 
   deploy_visualization:
-    needs: [plan, deploy_shared, deploy_clustering]
-    if: needs.plan.outputs.deploy_visualization == 'true' && (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped')
+    needs: [plan, deploy_shared]
+    if: needs.plan.outputs.deploy_visualization == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianVisualizationStack"
