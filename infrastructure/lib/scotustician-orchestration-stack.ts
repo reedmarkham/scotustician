@@ -33,6 +33,16 @@ export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly vpcId: string;
   readonly publicSubnetIds: string[];
   readonly privateSubnetIds: string[];
+  // Basic clustering defaults
+  readonly basicClusteringTsnePerplexity?: string;
+  readonly basicClusteringMinClusterSize?: string;
+  readonly basicClusteringOutputPrefix?: string;
+  // Term clustering defaults
+  readonly termClusteringTsnePerplexity?: string;
+  readonly termClusteringMinClusterSize?: string;
+  readonly termClusteringBaseOutputPrefix?: string;
+  readonly termClusteringMaxConcurrentJobs?: string;
+  // Legacy props for backward compatibility
   readonly tsnePerplexity?: string;
   readonly minClusterSize?: string;
   readonly maxConcurrentJobs?: string;
@@ -462,13 +472,13 @@ export class ScotusticianOrchestrationStack extends Stack {
           startTerm: currentYear,
           endTerm: currentYear,
           mode: 'scheduled',
-          basicClusteringTsnePerplexity: props.tsnePerplexity || '30',
-          basicClusteringMinClusterSize: props.minClusterSize || '5',
-          basicClusteringOutputPrefix: 'analysis/case-clustering',
-          termClusteringTsnePerplexity: props.tsnePerplexity || '30',
-          termClusteringMinClusterSize: props.minClusterSize || '5',
-          termClusteringBaseOutputPrefix: 'analysis/case-clustering-by-term',
-          termClusteringMaxConcurrentJobs: props.maxConcurrentJobs || '3'
+          basicClusteringTsnePerplexity: props.basicClusteringTsnePerplexity || props.tsnePerplexity || '30',
+          basicClusteringMinClusterSize: props.basicClusteringMinClusterSize || props.minClusterSize || '5',
+          basicClusteringOutputPrefix: props.basicClusteringOutputPrefix || 'analysis/case-clustering',
+          termClusteringTsnePerplexity: props.termClusteringTsnePerplexity || props.tsnePerplexity || '30',
+          termClusteringMinClusterSize: props.termClusteringMinClusterSize || props.minClusterSize || '5',
+          termClusteringBaseOutputPrefix: props.termClusteringBaseOutputPrefix || 'analysis/case-clustering-by-term',
+          termClusteringMaxConcurrentJobs: props.termClusteringMaxConcurrentJobs || props.maxConcurrentJobs || '3'
         })
       }));
 
