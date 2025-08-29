@@ -445,10 +445,6 @@ export class ScotusticianOrchestrationStack extends Stack {
       ],
     }));
 
-    //
-    // Schedule for current year processing during SCOTUS term
-    // First Monday in October through Second Friday in July
-    //
     // Schedule is enabled by default - can be disabled via CDK context
     const scheduleEnabled = this.node.tryGetContext('scheduleEnabled') !== false;
     if (scheduleEnabled) {
