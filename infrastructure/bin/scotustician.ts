@@ -66,6 +66,8 @@ new ScotusticianOrchestrationStack(app, 'ScotusticianOrchestrationStack', {
   ingestClusterArn: shared.ingestCluster.clusterArn,
   ingestTaskDefinitionArn: ingest.taskDefinitionArn,
   ingestContainerName: ingest.containerName,
+  ingestTaskExecutionRoleArn: ingest.taskExecutionRoleArn,
+  ingestTaskRoleArn: ingest.taskRoleArn,
   transformersJobQueueArn: transformers.jobQueueArn,
   transformersJobDefinitionArn: transformers.jobDefinitionArn,
   transformersJobName: transformers.jobName,

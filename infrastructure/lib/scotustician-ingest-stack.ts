@@ -18,6 +18,8 @@ interface ScotusticianIngestStackProps extends StackProps {
 export class ScotusticianIngestStack extends Stack {
   public readonly taskDefinitionArn: string;
   public readonly containerName: string;
+  public readonly taskExecutionRoleArn: string;
+  public readonly taskRoleArn: string;
 
   constructor(scope: Construct, id: string, props: ScotusticianIngestStackProps) {
     const qualifier = scope.node.tryGetContext('@aws-cdk:bootstrap-qualifier') || 'sctstcn';
@@ -87,6 +89,8 @@ export class ScotusticianIngestStack extends Stack {
     // Set public properties
     this.taskDefinitionArn = taskDefinition.taskDefinitionArn;
     this.containerName = container.containerName;
+    this.taskExecutionRoleArn = taskDefinition.executionRole!.roleArn;
+    this.taskRoleArn = taskDefinition.taskRole.roleArn;
 
     new CfnOutput(this, 'IngestTaskDefinitionArn', {
       value: taskDefinition.taskDefinitionArn,
@@ -94,6 +98,16 @@ export class ScotusticianIngestStack extends Stack {
 
     new CfnOutput(this, 'IngestContainerName', {
       value: container.containerName,
+    });
+
+    new CfnOutput(this, 'IngestTaskExecutionRoleArn', {
+      value: taskDefinition.executionRole!.roleArn,
+      description: 'ARN of the ingest task execution role',
+    });
+
+    new CfnOutput(this, 'IngestTaskRoleArn', {
+      value: taskDefinition.taskRole.roleArn,
+      description: 'ARN of the ingest task role',
     });
 
     const logGroup = new LogGroup(this, 'IngestLogGroup', {

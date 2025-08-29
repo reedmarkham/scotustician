@@ -23,6 +23,8 @@ export interface ScotusticianOrchestrationStackProps extends StackProps {
   readonly ingestClusterArn: string;
   readonly ingestTaskDefinitionArn: string;
   readonly ingestContainerName: string;
+  readonly ingestTaskExecutionRoleArn: string;
+  readonly ingestTaskRoleArn: string;
   readonly transformersJobQueueArn: string;
   readonly transformersJobDefinitionArn: string;
   readonly transformersJobName: string;
@@ -440,7 +442,8 @@ export class ScotusticianOrchestrationStack extends Stack {
       effect: Effect.ALLOW,
       actions: ['iam:PassRole'],
       resources: [
-        `arn:aws:iam::${this.account}:role/ecsTaskExecutionRole`,
+        props.ingestTaskExecutionRoleArn,
+        props.ingestTaskRoleArn,
         `arn:aws:iam::${this.account}:role/*BatchExecutionRole*`,
       ],
     }));
