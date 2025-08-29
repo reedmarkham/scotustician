@@ -227,7 +227,7 @@ jobs:
               --progress events"
             
             
-            if eval $DEPLOY_CMD 2>/dev/null; then
+            if eval $DEPLOY_CMD; then
               echo "Deployment successful"
               break
             else
