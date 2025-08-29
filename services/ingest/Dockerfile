@@ -11,7 +11,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy consolidated application code
 COPY main.py .
-COPY helpers.py .
 COPY .dlt/ ./.dlt/
 
 # Set environment variables for dlt
