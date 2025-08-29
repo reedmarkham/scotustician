@@ -217,7 +217,8 @@ jobs:
               $CONTEXT_FLAGS \
               --require-approval never \
               --method direct \
-              --progress events"
+              --progress events \
+              --exclusively"
             
             
             if eval $DEPLOY_CMD; then
