@@ -67,6 +67,7 @@ jobs:
               - '.github/workflows/**'
             orchestration:
               - 'infrastructure/lib/scotustician-orchestration-stack.ts'
+              - 'infrastructure/lib/scotustician-ingest-stack.ts'
               - 'infrastructure/bin/**'
               - 'database/**'
               - '.github/workflows/**'
@@ -82,7 +83,7 @@ jobs:
 
   deploy_ingest:
     needs: [plan, deploy_shared]
-    if: needs.plan.outputs.deploy_ingest == 'true'
+    if: needs.plan.outputs.deploy_ingest == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianIngestStack"
