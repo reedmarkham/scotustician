@@ -93,8 +93,8 @@ jobs:
     secrets: inherit
 
   deploy_transformers:
-    needs: [plan, deploy_shared]
-    if: needs.plan.outputs.deploy_transformers == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+    needs: [plan, deploy_shared, deploy_ingest]
+    if: needs.plan.outputs.deploy_transformers == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') && (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped' || needs.plan.outputs.deploy_ingest != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianTransformersStack"
@@ -102,26 +102,30 @@ jobs:
     secrets: inherit
 
   deploy_clustering:
-    needs: [plan, deploy_shared]
-    if: needs.plan.outputs.deploy_clustering == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+    needs: [plan, deploy_shared, deploy_transformers]
+    if: needs.plan.outputs.deploy_clustering == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') && (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped' || needs.plan.outputs.deploy_transformers != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianClusteringStack"
     secrets: inherit
 
   deploy_visualization:
-    needs: [plan, deploy_shared]
-    if: needs.plan.outputs.deploy_visualization == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+    needs: [plan, deploy_shared, deploy_clustering]
+    if: needs.plan.outputs.deploy_visualization == 'true' && (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') && (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped' || needs.plan.outputs.deploy_clustering != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianVisualizationStack"
     secrets: inherit
 
   deploy_orchestration:
-    needs: [plan, deploy_shared]
+    needs: [plan, deploy_shared, deploy_ingest, deploy_transformers, deploy_clustering, deploy_visualization]
     if: |
       needs.plan.outputs.deploy_orchestration == 'true' && 
-      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped')
+      (needs.deploy_shared.result == 'success' || needs.deploy_shared.result == 'skipped') &&
+      (needs.deploy_ingest.result == 'success' || needs.deploy_ingest.result == 'skipped' || needs.plan.outputs.deploy_ingest != 'true') &&
+      (needs.deploy_transformers.result == 'success' || needs.deploy_transformers.result == 'skipped' || needs.plan.outputs.deploy_transformers != 'true') &&
+      (needs.deploy_clustering.result == 'success' || needs.deploy_clustering.result == 'skipped' || needs.plan.outputs.deploy_clustering != 'true') &&
+      (needs.deploy_visualization.result == 'success' || needs.deploy_visualization.result == 'skipped' || needs.plan.outputs.deploy_visualization != 'true')
     uses: ./.github/workflows/deploy-stack.yml
     with:
       stack_name: "ScotusticianOrchestrationStack"
