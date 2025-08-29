@@ -114,8 +114,12 @@ jobs:
                 aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || true
                 ;;
               "UPDATE_IN_PROGRESS")
-                echo "Waiting for update to complete..."
-                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || true
+                echo "Waiting for update to complete (timeout: 30 minutes)..."
+                timeout 1800 aws cloudformation wait stack-update-complete --stack-name $STACK_NAME || {
+                  echo "Update wait timed out or failed, checking current status..."
+                  CURRENT_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "UNKNOWN")
+                  echo "Current stack status: $CURRENT_STATUS"
+                }
                 ;;
               "UPDATE_ROLLBACK_FAILED")
                 echo "Attempting to continue rollback..."
