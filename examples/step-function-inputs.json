@@ -1,5 +1,12 @@
 {
-  "startTerm": "2025",
-  "endTerm": "2025",
-  "mode": "current"
+  "startTerm": "2023",
+  "endTerm": "2023",
+  "mode": "manual",
+  "basicClusteringTsnePerplexity": "30",
+  "basicClusteringMinClusterSize": "5",
+  "basicClusteringOutputPrefix": "analysis/case-clustering",
+  "termClusteringTsnePerplexity": "30", 
+  "termClusteringMinClusterSize": "5",
+  "termClusteringBaseOutputPrefix": "analysis/case-clustering-by-term",
+  "termClusteringMaxConcurrentJobs": "3"
 }

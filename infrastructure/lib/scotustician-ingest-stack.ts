@@ -69,7 +69,7 @@ export class ScotusticianIngestStack extends Stack {
 
     const currentYear = new Date().getFullYear();
     
-    const container = taskDefinition.addContainer('IngestContainer', {
+    const container = taskDefinition.addContainer('ingest-container', {
       image: ContainerImage.fromDockerImageAsset(image),
       cpu: taskCpu,
       memoryLimitMiB: taskMemory,
